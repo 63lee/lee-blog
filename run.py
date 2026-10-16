@@ -223,7 +223,7 @@ def save_naver_version(draft: dict, url: str) -> None:
         photos += [p["path"] for p in imgs.get("photos", [])] + list(imgs.get("cards", []))
         post = naver.write(Anthropic(), MODEL, draft["titles"][0], draft.get("_search_keyword", ""),
                            url, draft["body_html"], len(photos),
-                           extra="- 글쓴이는 25년 차 직장 선배 '역삼동이선생'. 따뜻하지만 직설적인 존댓말.")
+                           extra="- 글쓴이는 25년 차 직장 선배 '역삼동이선생'. **평어체**(~다, ~한다)로 쓴다. 존댓말 금지.")
         out = Path(draft["_img_dir"]).parent / (Path(draft["_img_dir"]).name + "-naver")
         files = naver.package(post, photos, out)
         where = gdrive.save("이선생", datetime.now().strftime("%Y-%m-%d"), post["title"], files)
