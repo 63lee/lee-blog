@@ -5,12 +5,6 @@ on:
     # 22:30 UTC = 07:30 KST (아로하 07:00 과 겹치지 않게)
     - cron: "30 22 * * *"
   workflow_dispatch:
-    inputs:
-      mode:
-        description: "발행 방식"
-        type: choice
-        default: publish
-        options: [publish, draft]
 
 concurrency:
   group: lee-daily
@@ -42,13 +36,16 @@ jobs:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+          BLOGGER_POST_EMAIL: ${{ secrets.BLOGGER_POST_EMAIL }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
         run: |
           missing=""
-          for n in ANTHROPIC_API_KEY BLOG_ID GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET GOOGLE_REFRESH_TOKEN; do
+          for n in ANTHROPIC_API_KEY BLOGGER_POST_EMAIL GMAIL_ADDRESS GMAIL_APP_PASSWORD; do
             [ -z "${!n}" ] && missing="$missing $n"
           done
           if [ -n "$missing" ]; then echo "::error::등록되지 않은 Secrets:$missing"; exit 1; fi
-          echo "필수 Secrets 5개 확인됨"
+          echo "필수 Secrets 확인됨"
 
       - name: Write and publish
         env:
@@ -58,7 +55,12 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
           PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
-          PUBLISH_MODE: ${{ inputs.mode || 'publish' }}
+          # API 글쓰기가 막힌 계정이라 Blogger '이메일로 게시'로 올린다
+          POST_VIA: email
+          BLOGGER_POST_EMAIL: ${{ secrets.BLOGGER_POST_EMAIL }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          PUBLISH_MODE: publish
           IMAGE_HOSTING: github
           OUTPUT_DIR: posts
           DRAFTS_PER_DAY: "2"

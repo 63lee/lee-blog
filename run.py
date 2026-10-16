@@ -21,6 +21,7 @@ from keywords import mark_used, pick_today  # noqa: E402  (load_dotenv 이후에
 from images import build_images  # noqa: E402
 from writer import write_draft  # noqa: E402
 import hosting  # noqa: E402
+import mailer  # noqa: E402
 from images import make_thumbnail  # noqa: E402
 
 LOG_PATH = BASE / "data" / "run.log"
@@ -232,7 +233,17 @@ def main() -> int:
             from publisher import create_draft
 
             body = with_images(draft) if hosting.enabled() else draft["body_html"]
-            post = create_draft(draft["titles"][0], body, draft.get("labels", []))
+            title = draft["titles"][0]
+            if mailer.enabled():
+                # 이 계정은 API 글쓰기가 막혀 있어 '이메일로 게시'로 올린다 (라벨 대신 태그 줄을 붙인다)
+                tags = " ".join(f"#{t.replace(' ', '')}" for t in draft.get("labels", []))
+                if tags:
+                    body += f'<p style="color:#8a8178;font-size:14px;">{tags}</p>'
+                mailer.send(title, body)
+                url = mailer.wait_published(title)
+                log(f"  메일로 게시: {url or '발송 완료 (피드 반영 대기 중)'}")
+                continue
+            post = create_draft(title, body, draft.get("labels", []))
             log(f"  Blogger 초안 등록: {post.get('url') or post.get('id')}")
         except Exception as exc:
             # 업로드가 실패해도 로컬 원고는 남아 있으니 치명적이지 않다.
