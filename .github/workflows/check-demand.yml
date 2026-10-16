@@ -1,0 +1,32 @@
+name: Check search demand (no publish)
+
+# 글을 발행하지 않고, 오늘 검색량 상위 후보만 확인한다.
+on:
+  workflow_dispatch:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Top candidates
+        env:
+          NAVER_AD_CUSTOMER_ID: ${{ secrets.NAVER_AD_CUSTOMER_ID }}
+          NAVER_AD_API_KEY: ${{ secrets.NAVER_AD_API_KEY }}
+          NAVER_AD_SECRET: ${{ secrets.NAVER_AD_SECRET }}
+          PYTHONIOENCODING: utf-8
+        run: |
+          python - <<'PY'
+          import demand
+          c = demand.collect()
+          has = "volume" in c[0]
+          print(f"::notice title=네이버 검색량 연결::{'정상' if has else '미연결 (자동완성 순위로 진행)'} / 후보 {len(c)}개")
+          for x in c[:10]:
+              v = f"월 {x['volume']:,}회" if has else f"점수 {x['score']}"
+              print(f"::notice title=후보::{x['query']} — {v}")
+          PY
