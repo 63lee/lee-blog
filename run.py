@@ -176,16 +176,16 @@ def with_images(draft: dict) -> str:
     body = draft["body_html"]
     imgs = draft.get("_imgs") or {"cards": [], "stock": None}
     title = draft["titles"][0]
-    thumb = make_thumbnail(title, draft["_img_dir"] / "thumb.png")
+    # Pixabay 사진이 있으면 사진 배경 썸네일, 없으면 남색 글자 썸네일
+    hero_photo = imgs["stock"]["path"] if imgs.get("stock") else None
+    thumb = make_thumbnail(title, draft["_img_dir"] / "thumb.png", photo=hero_photo)
+    draft["_thumb"] = thumb
     extra = imgs.get("photos", [])
     files = ([thumb] + list(imgs["cards"]) + ([imgs["stock"]["path"]] if imgs["stock"] else [])
              + [p["path"] for p in extra])
     urls = hosting.publish(files, f"images: {title[:40]}")
 
-    if imgs["stock"]:
-        st = imgs["stock"]
-        hero = _img(urls[st["path"]], title)
-        body = body.replace("</p>", "</p>" + hero, 1)
+    # 도입부 사진은 이미 썸네일 배경으로 썼으므로 본문에 다시 넣지 않는다
 
     # 본문 중간 사진: 세 번째 소제목 앞 (인용 카드와 겹치지 않게)
     if extra:
@@ -206,6 +206,30 @@ def with_images(draft: dict) -> str:
         body += _img(urls[card], "핵심 문장 카드")
 
     return _img(urls[thumb], title) + body
+
+
+def save_naver_version(draft: dict, url: str) -> None:
+    """네이버 블로그용으로 다시 쓴 원고와 사진을 구글 드라이브에 저장한다. 실패해도 발행에는 영향 없음."""
+    import naver
+    import gdrive
+    if not gdrive.enabled():
+        return
+    try:
+        from anthropic import Anthropic
+        from writer import MODEL
+        imgs = draft.get("_imgs") or {}
+        photos = ([draft["_thumb"]] if draft.get("_thumb") else [])
+        photos += ([imgs["stock"]["path"]] if imgs.get("stock") else [])
+        photos += [p["path"] for p in imgs.get("photos", [])] + list(imgs.get("cards", []))
+        post = naver.write(Anthropic(), MODEL, draft["titles"][0], draft.get("_search_keyword", ""),
+                           url, draft["body_html"], len(photos),
+                           extra="- 글쓴이는 25년 차 직장 선배 '역삼동이선생'. 따뜻하지만 직설적인 존댓말.")
+        out = Path(draft["_img_dir"]).parent / (Path(draft["_img_dir"]).name + "-naver")
+        files = naver.package(post, photos, out)
+        where = gdrive.save("이선생", datetime.now().strftime("%Y-%m-%d"), post["title"], files)
+        log(f"  네이버용 원고 저장: 구글 드라이브/{where}")
+    except Exception as exc:
+        log(f"  [경고] 네이버용 원고 저장 실패 ({type(exc).__name__}: {exc})")
 
 
 def main() -> int:
@@ -231,6 +255,7 @@ def main() -> int:
             failures += 1
             continue
 
+        draft["_search_keyword"] = topic.get("search_keyword", "")
         mark_used(topic)
         path = save_local(draft, i)
         log(f"  저장: {path}")
@@ -250,6 +275,7 @@ def main() -> int:
                 mailer.send(title, body)
                 url = mailer.wait_published(title)
                 log(f"  메일로 게시: {url or '발송 완료 (피드 반영 대기 중)'}")
+                save_naver_version(draft, url)
                 continue
             post = create_draft(title, body, draft.get("labels", []))
             log(f"  Blogger 초안 등록: {post.get('url') or post.get('id')}")

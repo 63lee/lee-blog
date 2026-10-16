@@ -13,3 +13,4 @@ data/*.log
 *.bat
 *.vbs
 네이버 패션 인플루언서 블로그/
+token*.json

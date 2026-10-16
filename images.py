@@ -79,8 +79,17 @@ def make_quote_card(quote: str, out_path: Path, byline: str = "역삼동이선�
 THUMB_W, THUMB_H = 1080, 1350  # 모바일 세로 썸네일 (4:5)
 
 
-def make_thumbnail(title: str, out_path: Path, label: str = "역삼동이선생의 슬기로운 직장생활") -> Path:
-    """글 맨 위에 들어갈 모바일 세로 썸네일. Blogger 는 첫 이미지를 목록 썸네일로 쓴다."""
+def make_thumbnail(title: str, out_path: Path, label: str = "역삼동이선생의 슬기로운 직장생활",
+                   photo: Path | None = None) -> Path:
+    """글 맨 위에 들어갈 모바일 세로 썸네일. Blogger 는 첫 이미지를 목록 썸네일로 쓴다.
+
+    photo(Pixabay 사진)가 있으면 사진 위에 제목을 얹고, 없으면 남색 배경 버전으로 만든다.
+    """
+    if photo and Path(photo).exists():
+        try:
+            return _photo_thumbnail(title, out_path, Path(photo))
+        except Exception as exc:
+            print(f"  [경고] 사진 썸네일 실패, 기본 썸네일로 대신 ({type(exc).__name__})")
     img = Image.new("RGB", (THUMB_W, THUMB_H), BG)
     d = ImageDraw.Draw(img)
 
@@ -184,6 +193,77 @@ def fetch_stock_photos(query: str, out_dir: Path, count: int = 2) -> list[dict]:
         if len(out) >= count:
             break
     return out
+
+
+def _title_lines(d, title: str, font, max_w: int) -> list:
+    parts = [p.strip() for p in title.replace("—", ",").split(",") if p.strip()] or [title]
+    lines = []
+    for part in parts:
+        cur = ""
+        for word in part.split(" "):
+            trial = f"{cur} {word}".strip()
+            if d.textlength(trial, font=font) <= max_w:
+                cur = trial
+            else:
+                lines.append(cur)
+                cur = word
+        lines.append(cur)
+    return [l for l in lines if l]
+
+
+def _photo_thumbnail(title: str, out_path: Path, photo: Path) -> Path:
+    """사진 배경 썸네일 (아로하 블로그와 같은 구성: 라벨 알약 → 가는 선 → 굵은 제목)."""
+    from PIL import ImageFilter
+
+    img = Image.open(photo).convert("RGB")
+    scale = max(THUMB_W / img.width, THUMB_H / img.height)
+    img = img.resize((round(img.width * scale), round(img.height * scale)), Image.LANCZOS)
+    left, top = (img.width - THUMB_W) // 2, (img.height - THUMB_H) // 2
+    img = img.crop((left, top, left + THUMB_W, top + THUMB_H))
+
+    # 제목이 놓이는 위쪽과 맨 아래를 어둡게
+    col = [int(min(200 * max(0.0, 1 - (y / THUMB_H) / 0.70) + 190 * max(0.0, (y / THUMB_H - 0.78) / 0.22), 215))
+           for y in range(THUMB_H)]
+    mask = Image.new("L", (1, THUMB_H))
+    mask.putdata(col)
+    img = Image.composite(Image.new("RGB", img.size, (12, 18, 30)), img, mask.resize(img.size))
+
+    d = ImageDraw.Draw(img)
+    f_label = _font(FONT_BOLD, 38)
+    a, b = "역삼동이선생의", "슬기로운 직장생활"
+    tw = d.textlength(f"{a} {b}", font=f_label)
+    box = (60, 210, 60 + tw + 88, 210 + 82)
+    pill = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    ImageDraw.Draw(pill).rounded_rectangle(box, radius=41, fill=(250, 248, 244, 235))
+    img = Image.alpha_composite(img.convert("RGBA"), pill).convert("RGB")
+    d = ImageDraw.Draw(img)
+    d.text((box[0] + 44, box[1] + 18), a, font=f_label, fill=(23, 32, 47))
+    d.text((box[0] + 44 + d.textlength(a + " ", font=f_label), box[1] + 18), b, font=f_label, fill=ACCENT)
+
+    line_y = box[3] + 52
+    d.line((60, line_y, THUMB_W - 60, line_y), fill=(255, 255, 255), width=3)
+
+    size = 92
+    while True:
+        font = _font(FONT_BOLD, size)
+        lines = _title_lines(d, title, font, THUMB_W - 120)
+        if len(lines) <= 4 or size <= 60:
+            break
+        size -= 6
+    y = line_y + 56
+    for ln in lines[:4]:
+        shadow = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        ImageDraw.Draw(shadow).text((62, y + 4), ln, font=font, fill=(0, 0, 0, 150))
+        img = Image.alpha_composite(img.convert("RGBA"), shadow.filter(ImageFilter.GaussianBlur(6))).convert("RGB")
+        d = ImageDraw.Draw(img)
+        d.text((60, y), ln, font=font, fill=(255, 255, 255))
+        y += int(size * 1.3)
+
+    d.text((60, THUMB_H - 128), "역삼동이선생", font=_font(FONT_BOLD, 38), fill=(255, 255, 255))
+    d.text((60, THUMB_H - 76), "63lee.blogspot.com", font=_font(FONT_REG, 28), fill=ACCENT)
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    img.save(out_path.with_suffix(".jpg"), "JPEG", quality=86, optimize=True, progressive=True)
+    return out_path.with_suffix(".jpg")
 
 
 def fetch_stock_photo(query: str, out_path: Path) -> dict | None:
