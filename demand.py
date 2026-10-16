@@ -77,9 +77,10 @@ def naver_volumes(queries: list[str]) -> dict:
     import hmac
     import time
 
-    cid = os.environ.get("NAVER_AD_CUSTOMER_ID", "").strip()
-    key = os.environ.get("NAVER_AD_API_KEY", "").strip()
-    secret = os.environ.get("NAVER_AD_SECRET", "").strip()
+    # 붙여넣을 때 따옴표·공백·줄바꿈이 섞여 들어오는 일이 잦아 정리한다
+    def _clean(name):
+        return os.environ.get(name, "").strip().strip('"').strip("'").strip()
+    cid, key, secret = _clean("NAVER_AD_CUSTOMER_ID"), _clean("NAVER_AD_API_KEY"), _clean("NAVER_AD_SECRET")
     global NAVER_STATUS
     missing = [n for n, v in (("NAVER_AD_CUSTOMER_ID", cid), ("NAVER_AD_API_KEY", key),
                               ("NAVER_AD_SECRET", secret)) if not v]
