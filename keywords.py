@@ -127,14 +127,17 @@ def pick_evergreen_topics(used: set[str], count: int) -> list[dict]:
 
 
 def pick_today(count: int) -> list[dict]:
-    """오늘 쓸 주제 count개를 고른다. 트렌드를 먼저 채우고 나머지는 에버그린으로.
+    """오늘 쓸 주제 count개를 고른다. 검색 수요 주제를 먼저 채우고 나머지는 에버그린으로.
 
     여기서는 기록하지 않는다. 초안 작성이 실패한 주제까지 '사용함'으로
     남으면 그 주제를 영영 못 쓰게 되기 때문에, 기록은 성공한 뒤에
     mark_used()로 따로 남긴다.
     """
     used = {entry["keyword"] for entry in load_history()["used"]}
-    topics = pick_trend_topics(used)[:count]
+    # 1순위: 오늘 실제로 많이 검색되는 직장인 주제 (자동완성·트렌드 + Claude 선정)
+    from demand import pick as pick_demand
+    topics = pick_demand(used, count)
+    # 모자라면 기존 주제 풀로 채운다
     if len(topics) < count:
         topics += pick_evergreen_topics(used, count - len(topics))
     return topics
