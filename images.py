@@ -79,7 +79,7 @@ def make_quote_card(quote: str, out_path: Path, byline: str = "역삼동이선�
 THUMB_W, THUMB_H = 1080, 1350  # 모바일 세로 썸네일 (4:5)
 
 
-def make_thumbnail(title: str, out_path: Path, label: str = "역삼동이선생 커리어 노트") -> Path:
+def make_thumbnail(title: str, out_path: Path, label: str = "역삼동이선생의 슬기로운 직장생활") -> Path:
     """글 맨 위에 들어갈 모바일 세로 썸네일. Blogger 는 첫 이미지를 목록 썸네일로 쓴다."""
     img = Image.new("RGB", (THUMB_W, THUMB_H), BG)
     d = ImageDraw.Draw(img)

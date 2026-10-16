@@ -80,7 +80,7 @@ def pick_trend_topics(used: set[str]) -> list[dict]:
 
 
 def pick_evergreen_topics(used: set[str], count: int) -> list[dict]:
-    """아직 안 쓴 에버그린 주제를 커리어 우선으로 뽑는다."""
+    """아직 안 쓴 에버그린 주제를 슬기로운 직장생활 우선으로 뽑는다."""
     pool = [(c, t) for c, t in EVERGREEN_TOPICS if t not in used]
     if not pool:
         print("  [경고] 에버그린 주제 풀이 모두 소진됐습니다. niche.py에 추가하세요.")
@@ -91,19 +91,27 @@ def pick_evergreen_topics(used: set[str], count: int) -> list[dict]:
         print(f"  [주의] 남은 주제가 {len(pool)}개뿐입니다 (약 {len(pool) // 2}일치). "
               "niche.py의 EVERGREEN_TOPICS를 보충하세요.")
 
-    # 커리어가 주축이므로 2:1 비중으로 가중치를 준다.
-    career = [p for p in pool if p[0] == "career"]
-    brand = [p for p in pool if p[0] == "brand"]
-    random.shuffle(career)
-    random.shuffle(brand)
+    # 슬기로운 직장생활이 주축: office 3 : career 2 : brand 1 비중.
+    # 하루 2편씩만 뽑으므로, 지금까지 쓴 비율과 목표 비율의 차이가 가장 큰 쪽부터 채운다.
+    # (단순히 순서대로 섞으면 매일 office 만 뽑히고 나머지는 영영 안 나온다)
+    share = {"office": 3, "career": 2, "brand": 1}
+    cat_of = {t: c for c, t in EVERGREEN_TOPICS}
+    done = {c: 0 for c in share}
+    for entry in load_history()["used"]:
+        c = cat_of.get(entry["keyword"])
+        if c in done:
+            done[c] += 1
+    buckets = {c: [p for p in pool if p[0] == c] for c in share}
+    for items in buckets.values():
+        random.shuffle(items)
 
     ordered = []
-    while (career or brand) and len(ordered) < count:
-        for _ in range(2):
-            if career:
-                ordered.append(career.pop())
-        if brand:
-            ordered.append(brand.pop())
+    while any(buckets.values()) and len(ordered) < count:
+        total = sum(done.values()) + 1
+        cat = max((c for c in share if buckets[c]),
+                  key=lambda c: share[c] / sum(share.values()) - done[c] / total)
+        ordered.append(buckets[cat].pop())
+        done[cat] += 1
 
     return [
         {
