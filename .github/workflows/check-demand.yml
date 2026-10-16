@@ -25,7 +25,7 @@ jobs:
           import demand
           c = demand.collect()
           has = "volume" in c[0]
-          print(f"::notice title=네이버 검색량 연결::{'정상' if has else '미연결 (자동완성 순위로 진행)'} / 후보 {len(c)}개")
+          print(f"::notice title=네이버 검색량 연결::{demand.NAVER_STATUS} / 후보 {len(c)}개")
           for x in c[:10]:
               v = f"월 {x['volume']:,}회" if has else f"점수 {x['score']}"
               print(f"::notice title=후보::{x['query']} — {v}")

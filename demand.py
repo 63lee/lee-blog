@@ -63,6 +63,9 @@ def google_suggest(q: str) -> list[str]:
         return []
 
 
+NAVER_STATUS = "미확인"
+
+
 def naver_volumes(queries: list[str]) -> dict:
     """네이버 검색광고 API 키워드 도구로 월간 검색량(PC+모바일)을 받는다.
 
@@ -77,7 +80,11 @@ def naver_volumes(queries: list[str]) -> dict:
     cid = os.environ.get("NAVER_AD_CUSTOMER_ID", "").strip()
     key = os.environ.get("NAVER_AD_API_KEY", "").strip()
     secret = os.environ.get("NAVER_AD_SECRET", "").strip()
-    if not (cid and key and secret):
+    global NAVER_STATUS
+    missing = [n for n, v in (("NAVER_AD_CUSTOMER_ID", cid), ("NAVER_AD_API_KEY", key),
+                              ("NAVER_AD_SECRET", secret)) if not v]
+    if missing:
+        NAVER_STATUS = f"Secrets 없음: {', '.join(missing)}"
         return {}
 
     def _n(v):  # "< 10" 같은 값도 온다
@@ -97,13 +104,22 @@ def naver_volumes(queries: list[str]) -> dict:
         try:
             data = json.loads(urllib.request.urlopen(req, timeout=20).read().decode("utf-8"))
         except Exception as exc:
-            # 오류 메시지에 키가 들어가지 않게 종류만 남긴다
-            print(f"  [경고] 네이버 검색량 조회 실패 ({type(exc).__name__}) — 자동완성 순위로 진행")
+            # 오류 메시지에 키가 들어가지 않게 종류와 HTTP 코드만 남긴다
+            code = getattr(exc, "code", "")
+            detail = ""
+            if hasattr(exc, "read"):
+                try:
+                    detail = json.loads(exc.read().decode("utf-8")).get("title", "")[:80]
+                except Exception:
+                    pass
+            NAVER_STATUS = f"API 오류 {type(exc).__name__} {code} {detail}".strip()
+            print(f"  [경고] 네이버 검색량 조회 실패 ({NAVER_STATUS}) — 자동완성 순위로 진행")
             return vols
         for row in data.get("keywordList", []):
             if row["relKeyword"] in batch:
                 vols[row["relKeyword"]] = _n(row.get("monthlyPcQcCnt")) + _n(row.get("monthlyMobileQcCnt"))
         time.sleep(0.2)
+    NAVER_STATUS = "정상"
     return vols
 
 
