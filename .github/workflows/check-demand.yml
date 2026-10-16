@@ -30,8 +30,10 @@ jobs:
               print("::notice title=Pixabay 연결::Secrets 없음 (PIXABAY_API_KEY)")
           else:
               try:
-                  d = json.loads(urllib.request.urlopen("https://pixabay.com/api/?" + urllib.parse.urlencode(
-                      {"key": k, "q": "office meeting", "image_type": "photo", "per_page": 3}), timeout=20).read())
+                  r = urllib.request.Request("https://pixabay.com/api/?" + urllib.parse.urlencode(
+                      {"key": k, "q": "office meeting", "image_type": "photo", "per_page": 3}),
+                      headers={"User-Agent": "Mozilla/5.0 (lee-blog)"})
+                  d = json.loads(urllib.request.urlopen(r, timeout=20).read())
                   print(f"::notice title=Pixabay 연결::정상 ('office meeting' 사진 {d.get('totalHits', 0)}장)")
               except Exception as e:
                   print(f"::notice title=Pixabay 연결::오류 {type(e).__name__} {getattr(e, 'code', '')}")

@@ -156,7 +156,9 @@ def fetch_stock_photos(query: str, out_dir: Path, count: int = 2) -> list[dict]:
         "key": key, "q": query, "image_type": "photo", "orientation": "horizontal",
         "safesearch": "true", "per_page": 30, "min_width": 1200, "order": "popular"})
     try:
-        data = json.loads(urllib.request.urlopen(url, timeout=20).read())
+        # User-Agent 가 없으면 Pixabay(Cloudflare)가 403(1010)으로 막는다
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (lee-blog)"})
+        data = json.loads(urllib.request.urlopen(req, timeout=20).read())
     except Exception as exc:
         # 오류 메시지에 키가 든 주소가 찍히지 않게 종류만 남긴다
         print(f"  [경고] Pixabay 검색 실패 ({type(exc).__name__})")
