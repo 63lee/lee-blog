@@ -63,6 +63,50 @@ def google_suggest(q: str) -> list[str]:
         return []
 
 
+def naver_volumes(queries: list[str]) -> dict:
+    """네이버 검색광고 API 키워드 도구로 월간 검색량(PC+모바일)을 받는다.
+
+    키(NAVER_AD_CUSTOMER_ID / NAVER_AD_API_KEY / NAVER_AD_SECRET)가 없거나 실패하면 빈 dict.
+    API 는 공백 없는 키워드만 받고, 한 번에 5개까지라 나눠서 부른다.
+    """
+    import base64
+    import hashlib
+    import hmac
+    import time
+
+    cid = os.environ.get("NAVER_AD_CUSTOMER_ID", "").strip()
+    key = os.environ.get("NAVER_AD_API_KEY", "").strip()
+    secret = os.environ.get("NAVER_AD_SECRET", "").strip()
+    if not (cid and key and secret):
+        return {}
+
+    def _n(v):  # "< 10" 같은 값도 온다
+        return int(v) if str(v).isdigit() else 5
+
+    vols: dict[str, int] = {}
+    hints = list(dict.fromkeys(q.replace(" ", "") for q in queries))
+    for i in range(0, len(hints), 5):
+        batch = hints[i:i + 5]
+        ts = str(int(time.time() * 1000))
+        sig = base64.b64encode(hmac.new(secret.encode(), f"{ts}.GET./keywordstool".encode(),
+                                        hashlib.sha256).digest()).decode()
+        url = "https://api.searchad.naver.com/keywordstool?" + urllib.parse.urlencode(
+            {"hintKeywords": ",".join(batch), "showDetail": "1"})
+        req = urllib.request.Request(url, headers={
+            "X-Timestamp": ts, "X-API-KEY": key, "X-Customer": cid, "X-Signature": sig})
+        try:
+            data = json.loads(urllib.request.urlopen(req, timeout=20).read().decode("utf-8"))
+        except Exception as exc:
+            # 오류 메시지에 키가 들어가지 않게 종류만 남긴다
+            print(f"  [경고] 네이버 검색량 조회 실패 ({type(exc).__name__}) — 자동완성 순위로 진행")
+            return vols
+        for row in data.get("keywordList", []):
+            if row["relKeyword"] in batch:
+                vols[row["relKeyword"]] = _n(row.get("monthlyPcQcCnt")) + _n(row.get("monthlyMobileQcCnt"))
+        time.sleep(0.2)
+    return vols
+
+
 def _blocked(q: str) -> bool:
     low = q.lower()
     return any(b in q for b in BLOCK_TERMS) or any(b in low for b in EXTRA_BLOCK)
@@ -88,13 +132,24 @@ def collect() -> list[dict]:
     except Exception:
         pass
     ranked = sorted(score.items(), key=lambda kv: -kv[1])
-    return [{"query": q, "score": round(s, 2)} for q, s in ranked]
+    cands = [{"query": q, "score": round(s, 2)} for q, s in ranked]
+
+    # 네이버 검색광고 키가 있으면 상위 후보의 실제 월간 검색량으로 다시 정렬한다
+    top = cands[:120]
+    vols = naver_volumes([c["query"] for c in top])
+    if vols:
+        for c in top:
+            c["volume"] = vols.get(c["query"].replace(" ", ""), 0)
+        top.sort(key=lambda c: -c["volume"])
+        print(f"  네이버 월간 검색량 반영: {len(vols)}개 (최다: {top[0]['query']} {top[0]['volume']:,}회)")
+        return top
+    return cands
 
 
 PICK_PROMPT = """너는 '역삼동이선생의 슬기로운 직장생활' 블로그 편집장이다.
 독자는 30~40대 직장인이다. 오늘은 {today}이다.
 
-아래는 오늘 네이버·구글에서 실제로 많이 입력되는 직장인 관련 검색어 후보다 (점수가 높을수록 검색이 많다).
+아래는 오늘 네이버·구글에서 실제로 많이 입력되는 직장인 관련 검색어 후보다 (월 검색 수 또는 점수가 높을수록 검색이 많다).
 {candidates}
 
 이미 쓴 주제 (비슷한 건 피한다):
@@ -127,7 +182,9 @@ def pick(used: set[str], count: int) -> list[dict]:
     client = Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
     prompt = PICK_PROMPT.format(
         today=datetime.now().strftime("%Y년 %m월 %d일"),
-        candidates="\n".join(f"- {c['query']} ({c['score']})" for c in cands[:80]),
+        candidates="\n".join(
+            f"- {c['query']} (월 {c['volume']:,}회 검색)" if "volume" in c else f"- {c['query']} ({c['score']})"
+            for c in cands[:80]),
         used="\n".join(f"- {u}" for u in sorted(used)[-80:]) or "(없음)",
         count=count,
     )
