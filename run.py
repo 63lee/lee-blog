@@ -177,13 +177,21 @@ def with_images(draft: dict) -> str:
     imgs = draft.get("_imgs") or {"cards": [], "stock": None}
     title = draft["titles"][0]
     thumb = make_thumbnail(title, draft["_img_dir"] / "thumb.png")
-    files = [thumb] + list(imgs["cards"]) + ([imgs["stock"]["path"]] if imgs["stock"] else [])
+    extra = imgs.get("photos", [])
+    files = ([thumb] + list(imgs["cards"]) + ([imgs["stock"]["path"]] if imgs["stock"] else [])
+             + [p["path"] for p in extra])
     urls = hosting.publish(files, f"images: {title[:40]}")
 
     if imgs["stock"]:
         st = imgs["stock"]
-        hero = _img(urls[st["path"]], title, f'사진 ⓒ {st["photographer"]} / Pexels')
+        hero = _img(urls[st["path"]], title)
         body = body.replace("</p>", "</p>" + hero, 1)
+
+    # 본문 중간 사진: 세 번째 소제목 앞 (인용 카드와 겹치지 않게)
+    if extra:
+        h2s = [m.start() for m in re.finditer(r"<h2", body)]
+        pos = h2s[2] if len(h2s) >= 4 else (h2s[-1] if h2s else len(body))
+        body = body[:pos] + _img(urls[extra[0]["path"]], draft.get("image_query", title)) + body[pos:]
 
     h2 = [m.start() for m in re.finditer(r"<h2", body)]
     spots = []

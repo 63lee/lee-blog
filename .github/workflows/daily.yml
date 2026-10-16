@@ -54,7 +54,7 @@ jobs:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
-          PEXELS_API_KEY: ${{ secrets.PEXELS_API_KEY }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           NAVER_AD_CUSTOMER_ID: ${{ secrets.NAVER_AD_CUSTOMER_ID }}
           NAVER_AD_API_KEY: ${{ secrets.NAVER_AD_API_KEY }}
           NAVER_AD_SECRET: ${{ secrets.NAVER_AD_SECRET }}
@@ -75,7 +75,9 @@ jobs:
         run: |
           git config user.name "lee-blog-bot"
           git config user.email "actions@github.com"
-          git add data/history.json data/uploaded.json posts 2>/dev/null || true
+          for f in data/history.json data/uploaded.json data/used_photos.json posts; do
+            [ -e "$f" ] && git add "$f"
+          done
           git diff --staged --quiet && exit 0
           git commit -m "chore: run log $(date -u +%Y-%m-%d)"
           for i in 1 2 3; do

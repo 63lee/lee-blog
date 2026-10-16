@@ -122,40 +122,72 @@ def make_thumbnail(title: str, out_path: Path, label: str = "역삼동이선생�
     return out_path
 
 
-def fetch_stock_photo(query: str, out_path: Path) -> dict | None:
-    """Pexels에서 도입부용 사진 한 장을 받는다. 키가 없거나 실패하면 None."""
-    key = os.environ.get("PEXELS_API_KEY", "").strip()
-    if not key:
-        return None
+USED_PHOTOS = Path(__file__).parent / "data" / "used_photos.json"
 
-    url = (
-        "https://api.pexels.com/v1/search?"
-        + urllib.parse.urlencode(
-            {"query": query, "per_page": 1, "orientation": "landscape", "size": "large"}
-        )
-    )
+
+def _used_ids() -> set:
     try:
         import json
+        return set(json.loads(USED_PHOTOS.read_text(encoding="utf-8")))
+    except Exception:
+        return set()
 
-        req = urllib.request.Request(url, headers={"Authorization": key})
-        data = json.loads(urllib.request.urlopen(req, timeout=20).read())
-        if not data.get("photos"):
-            return None
-        photo = data["photos"][0]
 
-        out_path.parent.mkdir(parents=True, exist_ok=True)
-        img_req = urllib.request.Request(
-            photo["src"]["large2x"], headers={"User-Agent": "Mozilla/5.0"}
-        )
-        out_path.write_bytes(urllib.request.urlopen(img_req, timeout=30).read())
-        return {
-            "path": out_path,
-            "photographer": photo.get("photographer", ""),
-            "source_url": photo.get("url", ""),
-        }
+def _mark_used(pid: str) -> None:
+    import json
+    ids = sorted(_used_ids() | {pid})
+    USED_PHOTOS.parent.mkdir(parents=True, exist_ok=True)
+    USED_PHOTOS.write_text(json.dumps(ids), encoding="utf-8")
+
+
+def fetch_stock_photos(query: str, out_dir: Path, count: int = 2) -> list[dict]:
+    """Pixabay 에서 사진을 count 장 받는다 (2026-10-16, Pexels 신규 키 중단으로 교체).
+
+    Pixabay 라이선스: 상업적 이용 가능, 출처 표기 의무 없음. 단 사진 주소 직접 연결(핫링크)은
+    허용되지 않아 내려받아 저장소에 올려 쓴다. 이미 쓴 사진은 다시 쓰지 않는다.
+    PIXABAY_API_KEY 가 없거나 실패하면 빈 목록.
+    """
+    import json
+
+    key = os.environ.get("PIXABAY_API_KEY", "").strip().strip('"').strip("'")
+    if not key or not query:
+        return []
+    url = "https://pixabay.com/api/?" + urllib.parse.urlencode({
+        "key": key, "q": query, "image_type": "photo", "orientation": "horizontal",
+        "safesearch": "true", "per_page": 30, "min_width": 1200, "order": "popular"})
+    try:
+        data = json.loads(urllib.request.urlopen(url, timeout=20).read())
     except Exception as exc:
-        print(f"  [경고] 스톡 사진 실패: {exc}")
-        return None
+        # 오류 메시지에 키가 든 주소가 찍히지 않게 종류만 남긴다
+        print(f"  [경고] Pixabay 검색 실패 ({type(exc).__name__})")
+        return []
+
+    used = _used_ids()
+    out = []
+    for hit in data.get("hits", []):
+        pid = f"pixabay-{hit['id']}"
+        if pid in used:
+            continue
+        try:
+            path = out_dir / f"photo{len(out) + 1}.jpg"
+            path.parent.mkdir(parents=True, exist_ok=True)
+            req = urllib.request.Request(hit["largeImageURL"], headers={"User-Agent": "Mozilla/5.0"})
+            path.write_bytes(urllib.request.urlopen(req, timeout=30).read())
+        except Exception as exc:
+            print(f"  [경고] 사진 내려받기 실패 ({type(exc).__name__})")
+            continue
+        _mark_used(pid)
+        out.append({"path": path, "photographer": hit.get("user", ""),
+                    "source_url": hit.get("pageURL", ""), "tags": hit.get("tags", "")})
+        if len(out) >= count:
+            break
+    return out
+
+
+def fetch_stock_photo(query: str, out_path: Path) -> dict | None:
+    """예전 호출 호환용: 사진 한 장."""
+    photos = fetch_stock_photos(query, out_path.parent, 1)
+    return photos[0] if photos else None
 
 
 def build_images(draft: dict, day_dir: Path, stem: str) -> dict:
@@ -174,7 +206,8 @@ def build_images(draft: dict, day_dir: Path, stem: str) -> dict:
             print(f"  [경고] 인용 카드 생성 실패: {exc}")
 
     query = draft.get("image_query")
-    if query:
-        result["stock"] = fetch_stock_photo(query, img_dir / "hero.jpg")
+    photos = fetch_stock_photos(query, img_dir, 2) if query else []
+    result["stock"] = photos[0] if photos else None
+    result["photos"] = photos[1:]
 
     return result

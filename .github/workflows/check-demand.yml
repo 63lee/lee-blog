@@ -19,6 +19,7 @@ jobs:
           NAVER_AD_CUSTOMER_ID: ${{ secrets.NAVER_AD_CUSTOMER_ID }}
           NAVER_AD_API_KEY: ${{ secrets.NAVER_AD_API_KEY }}
           NAVER_AD_SECRET: ${{ secrets.NAVER_AD_SECRET }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
           PYTHONIOENCODING: utf-8
         run: |
           python - <<'PY'
@@ -29,4 +30,15 @@ jobs:
           for x in c[:10]:
               v = f"월 {x['volume']:,}회" if has else f"점수 {x['score']}"
               print(f"::notice title=후보::{x['query']} — {v}")
+          import os, json, urllib.request, urllib.parse
+          k = os.environ.get("PIXABAY_API_KEY", "").strip()
+          if not k:
+              print("::notice title=Pixabay 연결::Secrets 없음 (PIXABAY_API_KEY)")
+          else:
+              try:
+                  d = json.loads(urllib.request.urlopen("https://pixabay.com/api/?" + urllib.parse.urlencode(
+                      {"key": k, "q": "office meeting", "image_type": "photo", "per_page": 3}), timeout=20).read())
+                  print(f"::notice title=Pixabay 연결::정상 ('office meeting' 사진 {d.get('totalHits', 0)}장)")
+              except Exception as e:
+                  print(f"::notice title=Pixabay 연결::오류 {type(e).__name__} {getattr(e, 'code', '')}")
           PY
