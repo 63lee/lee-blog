@@ -11,6 +11,7 @@ Blogger API에는 이미지 업로드가 없어서, 파일로만 저장하고 �
 검수하면서 Blogger 편집기에 드래그해 넣는다.
 """
 import os
+import re
 import textwrap
 import urllib.parse
 import urllib.request
@@ -149,7 +150,8 @@ def _mark_used(pid: str) -> None:
     USED_PHOTOS.write_text(json.dumps(ids), encoding="utf-8")
 
 
-def fetch_stock_photos(query: str, out_dir: Path, count: int = 2) -> list[dict]:
+def fetch_stock_photos(query: str, out_dir: Path, count: int = 2,
+                       title: str = "", summary: str = "") -> list[dict]:
     """Pixabay 에서 사진을 count 장 받는다 (2026-10-16, Pexels 신규 키 중단으로 교체).
 
     Pixabay 라이선스: 상업적 이용 가능, 출처 표기 의무 없음. 단 사진 주소 직접 연결(핫링크)은
@@ -174,11 +176,25 @@ def fetch_stock_photos(query: str, out_dir: Path, count: int = 2) -> list[dict]:
         return []
 
     used = _used_ids()
+    hits = [h for h in data.get("hits", []) if f"pixabay-{h['id']}" not in used]
+
+    # Claude 가 미리보기를 보고 썸네일용(첫 번째)·본문용을 고른다. 실패하면 인기순 그대로.
+    if title and len(hits) >= 3 and os.environ.get("ANTHROPIC_API_KEY"):
+        try:
+            from anthropic import Anthropic
+            from writer import MODEL
+            import vision
+            pick = vision.choose(Anthropic(), MODEL, title, summary,
+                                 [h["webformatURL"] for h in hits[:10]], count - 1)
+            if pick:
+                order = [pick["thumb"]] + pick["body"]
+                hits = [hits[i] for i in order]
+        except Exception as exc:
+            print(f"  [경고] 사진 선택 건너뜀 ({type(exc).__name__})")
+
     out = []
-    for hit in data.get("hits", []):
+    for hit in hits:
         pid = f"pixabay-{hit['id']}"
-        if pid in used:
-            continue
         try:
             path = out_dir / f"photo{len(out) + 1}.jpg"
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -288,7 +304,8 @@ def build_images(draft: dict, day_dir: Path, stem: str) -> dict:
             print(f"  [경고] 인용 카드 생성 실패: {exc}")
 
     query = draft.get("image_query")
-    photos = fetch_stock_photos(query, img_dir, 2) if query else []
+    summary = re.sub(r"<[^>]+>", " ", draft.get("body_html", ""))[:600]
+    photos = fetch_stock_photos(query, img_dir, 2, draft.get("titles", [""])[0], summary) if query else []
     result["stock"] = photos[0] if photos else None
     result["photos"] = photos[1:]
 

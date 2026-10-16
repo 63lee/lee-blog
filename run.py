@@ -223,7 +223,13 @@ def save_naver_version(draft: dict, url: str) -> None:
         photos += [p["path"] for p in imgs.get("photos", [])] + list(imgs.get("cards", []))
         post = naver.write(Anthropic(), MODEL, draft["titles"][0], draft.get("_search_keyword", ""),
                            url, draft["body_html"], len(photos),
-                           extra="- 글쓴이는 25년 차 직장 선배 '역삼동이선생'. **평어체**(~다, ~한다)로 쓴다. 존댓말 금지.")
+                           extra="\n".join([
+                               "- 글쓴이는 25년 차 직장 선배 '역삼동이선생'. **평어체**(~다, ~한다)로 쓴다. 존댓말 금지.",
+                               "- 목적은 **인플루언서·팬 확보**다. 정보 정리보다 이선생 본인의 경험·감정·후배를 아끼는 "
+                               "시선이 보이게 쓴다. 첫 문단은 이선생의 구체적인 장면으로 시작한다.",
+                               "- 끝에 독자 경험을 묻는 댓글 질문 1개와 '이런 이야기가 도움이 됐다면 이웃 추가해 두세요' 같은 한 줄.",
+                               "- 원문 링크는 '더 자세한 정리는 여기'처럼 가볍게 한 번만.",
+                           ]))
         out = Path(draft["_img_dir"]).parent / (Path(draft["_img_dir"]).name + "-naver")
         files = naver.package(post, photos, out)
         where = gdrive.save("이선생", datetime.now().strftime("%Y-%m-%d"), post["title"], files)
