@@ -23,14 +23,8 @@ jobs:
           PYTHONIOENCODING: utf-8
         run: |
           python - <<'PY'
-          import demand
-          c = demand.collect()
-          has = "volume" in c[0]
-          print(f"::notice title=네이버 검색량 연결::{demand.NAVER_STATUS} / 후보 {len(c)}개")
-          for x in c[:10]:
-              v = f"월 {x['volume']:,}회" if has else f"점수 {x['score']}"
-              print(f"::notice title=후보::{x['query']} — {v}")
           import os, json, urllib.request, urllib.parse
+          # GitHub 는 알림을 10개까지만 보여 주므로 연결 상태를 먼저, 후보는 5개만 찍는다
           k = os.environ.get("PIXABAY_API_KEY", "").strip()
           if not k:
               print("::notice title=Pixabay 연결::Secrets 없음 (PIXABAY_API_KEY)")
@@ -41,4 +35,11 @@ jobs:
                   print(f"::notice title=Pixabay 연결::정상 ('office meeting' 사진 {d.get('totalHits', 0)}장)")
               except Exception as e:
                   print(f"::notice title=Pixabay 연결::오류 {type(e).__name__} {getattr(e, 'code', '')}")
+          import demand
+          c = demand.collect()
+          print(f"::notice title=네이버 검색량 연결::{demand.NAVER_STATUS} / 후보 {len(c)}개")
+          has = "volume" in c[0]
+          for x in c[:5]:
+              v = f"월 {x['volume']:,}회" if has else f"점수 {x['score']}"
+              print(f"::notice title=후보::{x['query']} — {v}")
           PY
