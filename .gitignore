@@ -1,0 +1,15 @@
+# 키·토큰 (절대 올리지 않는다)
+.env
+*.env
+!.env.example
+token.json
+token.json.*
+client_secret*.json
+
+# 로컬 전용
+__pycache__/
+output/
+data/*.log
+*.bat
+*.vbs
+네이버 패션 인플루언서 블로그/
