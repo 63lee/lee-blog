@@ -9,6 +9,7 @@ import os
 import re
 import subprocess
 import time
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -50,7 +51,9 @@ def publish(paths: list[Path], message: str) -> dict:
         raise RuntimeError("이미지 푸시 실패")
     sha = _git("rev-parse", "HEAD")
     slug = _repo_slug()
-    urls = {p: f"https://cdn.jsdelivr.net/gh/{slug}@{sha}/{rel}" for p, rel in zip(paths, rels)}
+    # 한글 파일명을 그대로 두면 크롤러·썸네일 추출이 실패할 수 있어 퍼센트 인코딩한다
+    urls = {p: f"https://cdn.jsdelivr.net/gh/{slug}@{sha}/{urllib.parse.quote(rel)}"
+            for p, rel in zip(paths, rels)}
 
     # 첫 번째 파일이 열릴 때까지 잠깐 기다린다 (보통 몇 초)
     first = next(iter(urls.values()), None)
