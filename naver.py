@@ -9,7 +9,6 @@
   - 01_썸네일.jpg/png, 02~ 사진 : 원고의 [사진n] 자리에 넣을 사진
 """
 import html
-import json
 import re
 import shutil
 from pathlib import Path
@@ -31,8 +30,10 @@ PROMPT = """아래 블로그 글을 네이버 블로그용으로 **새로 쓴다
 - 마지막 문단에 "더 자세한 내용은 원문에서" 처럼 원문 주소로 안내한다.
 - 해시태그 10~15개 (네이버에서 실제로 검색되는 붙여쓴 단어).
 {extra}
-다음 JSON 하나만 출력한다:
-{{"title": "제목", "body_html": "<p>, <h3>, <ul>, <li>, <strong> 만 쓴 본문", "hashtags": ["#태그"]}}"""
+아래 세 태그만 이 순서로 출력한다 (JSON 아님, 다른 말 없이):
+<title>제목</title>
+<body><p>, <h3>, <ul>, <li>, <strong> 만 쓴 본문</body>
+<hashtags>#태그1 #태그2 ...</hashtags>"""
 
 
 def _plain(body_html: str) -> str:
@@ -45,10 +46,18 @@ def write(client, model: str, title: str, keyword: str, url: str, body_html: str
           n_photos: int, extra: str = "") -> dict:
     prompt = PROMPT.format(title=title, keyword=keyword or title, url=url or "(주소 미정)",
                            body=_plain(body_html)[:9000], n=n_photos, extra=extra)
-    resp = client.messages.create(model=model, max_tokens=6000,
-                                  messages=[{"role": "user", "content": prompt}])
-    text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
-    return json.loads(text[text.index("{"): text.rindex("}") + 1], strict=False)
+    # 본문 HTML 에 따옴표가 섞여 JSON 이 깨진 적이 있어(2026-10-17) 태그로 나눠 받는다. 한 번 더 시도한다.
+    for _ in range(2):
+        resp = client.messages.create(model=model, max_tokens=6000,
+                                      messages=[{"role": "user", "content": prompt}])
+        text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
+        parts = {k: re.search(rf"<{k}>(.*?)</{k}>", text, re.S) for k in ("title", "body", "hashtags")}
+        if parts["title"] and parts["body"]:
+            tags = parts["hashtags"].group(1) if parts["hashtags"] else ""
+            return {"title": parts["title"].group(1).strip(),
+                    "body_html": parts["body"].group(1).strip(),
+                    "hashtags": re.findall(r"#\S+", tags)}
+    raise ValueError(f"네이버용 원고 형식을 읽지 못함: {text[:200]!r}")
 
 
 def package(post: dict, photos: list, out_dir: Path) -> list:

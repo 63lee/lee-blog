@@ -39,7 +39,14 @@ jobs:
           BLOGGER_POST_EMAIL: ${{ secrets.BLOGGER_POST_EMAIL }}
           GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
           GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
+          GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
+          GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
         run: |
+          # 드라이브 권한이 없으면 네이버용 원고만 빠진다 (발행은 계속). 실행 요약에 노란 경고로 띄운다.
+          for n in GDRIVE_CLIENT_ID GDRIVE_CLIENT_SECRET GDRIVE_REFRESH_TOKEN; do
+            [ -z "${!n}" ] && echo "::warning::$n 미등록 → 네이버용 원고가 드라이브에 저장되지 않습니다"
+          done
           missing=""
           for n in ANTHROPIC_API_KEY BLOGGER_POST_EMAIL GMAIL_ADDRESS GMAIL_APP_PASSWORD; do
             [ -z "${!n}" ] && missing="$missing $n"
@@ -71,6 +78,8 @@ jobs:
           OUTPUT_DIR: posts
           DRAFTS_PER_DAY: "2"
           PYTHONIOENCODING: utf-8
+          # 러너는 UTC 라 07:30 KST 실행이 전날 날짜로 저장됐다. 날짜를 한국 기준으로 맞춘다.
+          TZ: Asia/Seoul
         run: python -u run.py
 
       - name: Commit history
