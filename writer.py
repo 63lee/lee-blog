@@ -7,6 +7,8 @@ from pathlib import Path
 
 from anthropic import Anthropic
 
+import cliche
+
 MODEL = "claude-sonnet-5"
 # 본문 + 확장 사고까지 담아야 한다. 부족하면 JSON이 중간에 잘려 파싱이 깨진다.
 MAX_TOKENS = 16000
@@ -16,6 +18,8 @@ SYSTEM = f"""당신은 네이버·구글 블로그 '역삼동이선생'의 글�
 아래 지침을 문자 그대로 지킨다.
 
 {PERSONA}
+
+{cliche.RULE}
 
 ## 출력 형식
 JSON 하나를 쓰고, 그 아래 `===BODY===` 한 줄, 그 아래 본문 HTML을 쓴다.
@@ -256,6 +260,8 @@ def write_draft(topic: dict) -> dict:
             break
         print(f"  본문 {length}자 → {MIN_CHARS}자 목표로 확장 중")
         draft = expand(client, draft, topic)
+    draft = cliche.scrub_fields(client, MODEL, draft,
+                                ("titles", "meta_description", "quote_cards", "body_html"), "평어체")
     print(f"  최종 본문 {body_length(draft['body_html'])}자")
 
     draft["topic"] = topic
