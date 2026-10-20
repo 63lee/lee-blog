@@ -241,6 +241,45 @@ def save_naver_version(draft: dict, url: str) -> None:
         log(f"  [경고] 네이버용 원고 저장 실패 ({type(exc).__name__}: {exc})")
 
 
+def save_clip(draft: dict) -> bool:
+    """글로 네이버 클립·인스타 릴스 영상(9:16)을 만들어 드라이브 '[클립] 제목' 폴더에 저장한다 (2026-10-20).
+    영상·표지·캡션 2개가 들어간다. 대본 JSON 은 posts/ 에 남긴다. 실패해도 발행에는 영향 없음."""
+    import gdrive
+    if os.environ.get("CLIP_MODE", "drive") == "off":
+        return False
+    if not gdrive.enabled():
+        log("  [경고] 클립 건너뜀: 드라이브 권한 없음")
+        return False
+    try:
+        import json
+        import tempfile
+        from anthropic import Anthropic
+        import clip
+        import clipwriter
+        from writer import MODEL
+        client = Anthropic()
+        title = draft["titles"][0]
+        job = clipwriter.make_job(client, MODEL, title, draft["body_html"])
+        # 영상 작업 파일(배경 영상 등)은 저장소에 올리지 않도록 임시 폴더에서 만든다
+        tmp = Path(tempfile.mkdtemp())
+        job_path = tmp / "clip.json"
+        job_path.write_text(json.dumps(job, ensure_ascii=False, indent=2), encoding="utf-8")
+        out = tmp / "out"
+        final = clip.build(job_path, picker=clip.vision_picker(client, MODEL, job["title"]), out=out)
+        img_dir = Path(draft["_img_dir"])
+        (img_dir.parent / (img_dir.name.replace("-images", "") + "-clip.json")).write_text(
+            job_path.read_text(encoding="utf-8"), encoding="utf-8")
+        files = [p for p in (final, out / "cover.jpg", out / "caption_naver.txt", out / "caption_instagram.txt")
+                 if p.exists()]
+        where = gdrive.save("이선생", datetime.now().strftime("%Y-%m-%d"), f"[클립] {title}", files)
+        log(f"  클립 저장: 구글 드라이브/{where}")
+        return True
+    except Exception as exc:
+        log(f"  [경고] 클립 만들기 실패 ({type(exc).__name__}: {exc})")
+        traceback.print_exc()
+        return False
+
+
 def main() -> int:
     manual = topics_from_args(sys.argv)
     count = len(manual) or int(os.environ.get("DRAFTS_PER_DAY", "2"))
@@ -253,6 +292,7 @@ def main() -> int:
 
     upload = "--no-upload" not in sys.argv
     failures = 0
+    clips_made = 0
 
     for i, topic in enumerate(topics, 1):
         log(f"[{i}/{len(topics)}] {topic['track']} / {topic['keyword']}")
@@ -285,6 +325,9 @@ def main() -> int:
                 url = mailer.wait_published(title)
                 log(f"  메일로 게시: {url or '발송 완료 (피드 반영 대기 중)'}")
                 save_naver_version(draft, url)
+                # 클립은 하루 CLIPS_PER_DAY 편(기본 1편)만 만든다
+                if clips_made < int(os.environ.get("CLIPS_PER_DAY", "1")) and save_clip(draft):
+                    clips_made += 1
                 continue
             post = create_draft(title, body, draft.get("labels", []))
             log(f"  Blogger 초안 등록: {post.get('url') or post.get('id')}")

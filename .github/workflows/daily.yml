@@ -77,6 +77,9 @@ jobs:
           IMAGE_HOSTING: github
           OUTPUT_DIR: posts
           DRAFTS_PER_DAY: "2"
+          # 하루 1편, 글로 네이버 클립·인스타 릴스 영상을 만들어 드라이브에 저장 (off 면 끔)
+          CLIPS_PER_DAY: "1"
+          CLIP_MODE: drive
           PYTHONIOENCODING: utf-8
           # 러너는 UTC 라 07:30 KST 실행이 전날 날짜로 저장됐다. 날짜를 한국 기준으로 맞춘다.
           TZ: Asia/Seoul

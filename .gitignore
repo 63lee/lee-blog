@@ -14,3 +14,9 @@ data/*.log
 *.vbs
 네이버 패션 인플루언서 블로그/
 token*.json
+
+# 클립: 샘플·작업 파일은 로컬 전용, 글꼴은 실제로 쓰는 두 개만 올린다 (둘 다 OFL)
+clip_samples/
+fonts/*
+!fonts/Pretendard-SemiBold.otf
+!fonts/GowunBatang-Bold.ttf

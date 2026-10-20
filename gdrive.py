@@ -67,7 +67,23 @@ def _folder(token, name, parent=None) -> str:
                 {"Content-Type": "application/json; charset=UTF-8"})["id"]
 
 
+def _upload_resumable(token, path: Path, parent: str, name: str = "") -> str:
+    """5MB 넘는 파일(클립 영상 등)은 이어 올리기 방식으로 보낸다. 한 번에 보내면 끊기기 쉽다."""
+    meta = json.dumps({"name": name or path.name, "parents": [parent]}).encode()
+    mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    req = urllib.request.Request(UPLOAD.replace("uploadType=multipart", "uploadType=resumable"), data=meta,
+                                 method="POST", headers={"Authorization": f"Bearer {token}",
+                                                         "Content-Type": "application/json; charset=UTF-8",
+                                                         "X-Upload-Content-Type": mime})
+    session = urllib.request.urlopen(req, timeout=60).headers["Location"]
+    put = urllib.request.Request(session, data=path.read_bytes(), method="PUT",
+                                 headers={"Content-Type": mime})
+    return json.loads(urllib.request.urlopen(put, timeout=600).read())["id"]
+
+
 def _upload(token, path: Path, parent: str, name: str = "") -> str:
+    if path.stat().st_size > 5 * 1024 * 1024:
+        return _upload_resumable(token, path, parent, name)
     boundary = uuid.uuid4().hex
     meta = json.dumps({"name": name or path.name, "parents": [parent]}).encode()
     mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
