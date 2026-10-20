@@ -42,7 +42,9 @@ FF = ffmpeg_exe()
 
 
 def run(args):
-    subprocess.run([FF, "-hide_banner", "-loglevel", "error", "-y", *args], check=True)
+    # -nostdin: 이미지 반복 입력이 있으면 ffmpeg 가 키 입력을 기다리며 멈출 때가 있다
+    subprocess.run([FF, "-nostdin", "-hide_banner", "-loglevel", "error", "-y", *args], check=True,
+                   stdin=subprocess.DEVNULL)
 
 
 def duration(path: Path) -> float:
@@ -316,23 +318,127 @@ def _shade(img, y0, y1, peak, top_dark=True):
         d.line([(0, y), (W, y)], fill=(0, 0, 0, int(a)))
 
 
-def overlay(title, sub, em, path: Path):
+def _fit(d, lines, size, path, max_w=W - 140, floor=50):
+    while max(d.textlength(x, font=font(size, path)) for x in lines) > max_w and size > floor:
+        size -= 4
+    return font(size, path), size
+
+
+def _lines_left(img, x, y, lines, f, size, em, gap=1.4):
+    d = ImageDraw.Draw(img)
+    for k, line in enumerate(lines):
+        cx, rest, segs = x, line, []
+        for e in em:
+            if e in rest:
+                a, b = rest.split(e, 1)
+                segs += [(a, WHITE), (e, ACCENT)]
+                rest = b
+        segs.append((rest, WHITE))
+        for s, c in segs:
+            shadow_text(img, (cx, y + k * int(size * gap)), s, f, c, blur=8, alpha=190)
+            cx += d.textlength(s, font=f)
+
+
+# 화면 구도 (2026-10-20 사용자: "텍스트 구도가 단조롭고 리듬감이 없다")
+#   intro : 첫 화면. 큰 명조 제목 + 아래 자막
+#   base  : 아래 가운데 자막
+#   left  : 왼쪽 아래 정렬 자막 (조금 크게)
+#   quote : 인용 대사. 화면 가운데 큰 명조 + 큰 따옴표
+#   punch : 강조어 하나를 아주 크게, 나머지는 작게
+LAYOUTS = ("intro", "base", "left", "quote", "punch")
+
+
+def auto_layouts(scenes: list) -> list:
+    """장면·자막마다 구도를 고른다. 같은 구도가 연달아 나오지 않게 섞는다."""
+    out, prev, plain = [], None, 0
+    for i, sc in enumerate(scenes):
+        subs = sc.get("subs") or chunks(sc["say"])
+        lays = []
+        for k, s in enumerate(subs):
+            want = (sc.get("layouts") or [None] * len(subs))[k] if k < len(sc.get("layouts") or []) else None
+            if want in LAYOUTS:
+                lay = want
+            elif i == 0 and k == 0:
+                lay = "intro"
+            elif s.lstrip().startswith(("“", '"')) and prev != "quote":
+                lay = "quote"
+            elif (prev not in ("punch", "intro") and any(e in s and len(e) <= 7 for e in sc.get("em", []))
+                  and len(s.replace("\n", "")) <= 22 and plain >= 1):
+                lay = "punch"
+            else:
+                lay = ("base", "left")[plain % 2]
+                plain += 1
+            lays.append(lay)
+            prev = lay
+            if lay in ("quote", "punch"):
+                plain = 1
+        out.append(lays)
+    return out
+
+
+def layer_static(title, layout, path: Path):
+    """움직이지 않는 층: 그늘 + 제목 (첫 화면은 크게, 나머지는 위쪽 작은 한 줄)."""
     img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    _shade(img, 0, 900, 150)  # 밝은 배경에서도 제목이 읽히게
-    if sub:
-        _shade(img, 1100, 1420, 120, top_dark=False)
-    title_block(img, title)
-    if sub:  # 네이버 클립 하단 UI 를 피해 화면 65% 높이, 두 줄이면 위로 반 줄 올린다
-        d = ImageDraw.Draw(img)
-        lines = sub.split("\n")
-        size = 70
-        while max(d.textlength(x, font=font(size, SUB_FONT)) for x in lines) > W - 140 and size > 52:
-            size -= 4
-        f, gap = font(size, SUB_FONT), int(size * 1.4)
+    if layout == "intro":
+        _shade(img, 300, 1500, 170, top_dark=False)
+        title_block(img, title, y=560, size=118)
+    elif layout == "quote":
+        _shade(img, 450, 1350, 150, top_dark=False)
+    else:
+        _shade(img, 0, 420, 140)
+        shadow_text(img, (80, 160), " ".join(t.rstrip(",") for t in title), font(46, TITLE_FONT),
+                    (245, 238, 228), blur=6, alpha=160)
+        if layout == "punch":
+            _shade(img, 650, 1400, 140, top_dark=False)
+        else:
+            _shade(img, 1050, 1450, 130, top_dark=False)
+    img.save(path)
+
+
+def layer_text(sub, em, layout, path: Path):
+    """움직이는 층: 자막. 구도마다 자리·크기·글꼴이 다르다."""
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    lines = sub.split("\n")
+    em = [e for e in em if e in sub]
+    if layout == "quote":
+        f, size = _fit(d, [x.replace("“", "").replace("”", "") for x in lines], 82, TITLE_FONT)
+        shadow_text(img, (80, 640), "“", font(220, TITLE_FONT), ACCENT + (255,), blur=6, alpha=120)
+        y0 = 860
+        for k, x in enumerate(lines):
+            x = x.replace("“", "").replace("”", "")
+            shadow_text(img, (80, y0 + k * int(size * 1.45)), x, f, WHITE, blur=8, alpha=190)
+    elif layout == "punch" and em:
+        word = next(e for e in em)
+        big, bsize = _fit(d, [word], 170, TITLE_FONT, floor=110)
+        small, ssize = _fit(d, lines, 58, SUB_FONT)
+        rest = [x for x in lines]
+        y = 780
+        _lines_left(img, 80, y, rest, small, ssize, [])
+        shadow_text(img, (76, y + len(rest) * int(ssize * 1.4) + 30), word, big, ACCENT, blur=10, alpha=180)
+    elif layout == "left" or layout == "intro":
+        f, size = _fit(d, lines, 76 if layout == "left" else 66, SUB_FONT)
+        y = 1170 if layout == "left" else 1240
+        _lines_left(img, 80, y - (len(lines) - 1) * int(size * 1.4) // 2, lines, f, size, em)
+    else:
+        f, size = _fit(d, lines, 70, SUB_FONT)
+        gap = int(size * 1.4)
         y0 = 1240 - (len(lines) - 1) * gap // 2
         for k, x in enumerate(lines):
             subtitle(img, y0 + k * gap, x, f, [e for e in em if e in x])
     img.save(path)
+
+
+def overlay(title, sub, em, path: Path, layout: str = "base"):
+    """정지 화면 한 장 (미리보기·표지 시험용). 영상은 layer_static + layer_text 를 따로 겹친다."""
+    a, b = path.with_suffix(".s.png"), path.with_suffix(".t.png")
+    layer_static(title, layout, a)
+    layer_text(sub, em, layout, b)
+    img = Image.open(a)
+    img.alpha_composite(Image.open(b))
+    img.save(path)
+    a.unlink()
+    b.unlink()
 
 
 def end_card(title, line, path: Path, style: str = "search"):
@@ -385,6 +491,7 @@ def build(job_path: Path, picker=None, out: Path = None):
         p.mkdir(parents=True, exist_ok=True)
 
     used, segs, auds = set(), [], []
+    layouts = auto_layouts(job["scenes"])
     first_clip = None
     n = 0
     for i, sc in enumerate(job["scenes"]):
@@ -421,14 +528,22 @@ def build(job_path: Path, picker=None, out: Path = None):
         offset = 0.0
         for k, piece in enumerate(pieces):
             d = dur * lengths[k] / sum(lengths)
-            png = work / f"ov{n:03d}.png"
-            overlay(job["title"], piece, sc.get("em", []), png)
+            lay = layouts[i][k]
+            st, tx = work / f"st{n:03d}.png", work / f"tx{n:03d}.png"
+            layer_static(job["title"], lay, st)
+            layer_text(piece, sc.get("em", []), lay, tx)
             seg = work / f"seg{n:03d}.mp4"
+            # 자막은 0.35초 동안 살짝 떠오르며 나타난다 (화면마다 리듬이 생기게)
+            rise = "if(lt(t,0.35),36*(1-t/0.35),0)"
             run(["-stream_loop", "-1", "-ss", f"{offset:.3f}", "-t", f"{d:.3f}", "-i", str(clip),
-                 "-i", str(png), "-filter_complex",
+                 "-i", str(st), "-i", str(tx), "-filter_complex",
+                 # 이미지는 한 장만 넣고 필터 안에서 반복한다 (-loop 1 입력은 버퍼 오류가 났다)
                  f"[0:v]scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
-                 f"eq=brightness=0.03:saturation=1.03,fps={FPS},setsar=1[b];[b][1:v]overlay=0:0,format=yuv420p",
-                 "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", str(seg)])
+                 f"eq=brightness=0.03:saturation=1.03,fps={FPS},setsar=1[b];"
+                 f"[2:v]format=rgba,loop=loop=-1:size=1:start=0,setpts=N/{FPS}/TB,"
+                 f"fade=t=in:st=0:d=0.35:alpha=1[t];"
+                 f"[b][1:v]overlay=0:0[s];[s][t]overlay=x=0:y='{rise}',format=yuv420p",
+                 "-t", f"{d:.3f}", "-an", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", str(seg)])
             segs.append(seg)
             offset += d
             n += 1

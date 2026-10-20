@@ -5,6 +5,7 @@
 1) 프롬프트에 RULE 을 넣어 처음부터 덜 쓰게 하고
 2) 생성 뒤 scrub() 으로 걸린 문장만 Claude 에게 다시 쓰게 한다. 그래도 남으면 그 문장을 지운다.
 호텔아로하 저장소(blog-automation/src/cliche.py)에도 같은 파일이 있다. 고칠 때 둘 다 고친다.
+단, 경력 연수 금지("25년 차" 등)는 이선생 쪽에만 있다.
 """
 import json
 import re
@@ -15,7 +16,8 @@ RULE = """[AI 티 나는 상투 표현 금지 — 반드시 지킨다]
 - "이것만 알면", "결론부터 말하면", "이유는 하나다", "답은 간단하다", "단순한 ~이 아니라 ~이다"
 - 영어: "is all you need", "all it takes is", "that's it.", "just one thing", "here's the thing",
   "the secret is", "not just a ..., it's ..."
-이런 단정·요약형 결론 문장 대신, 구체적인 장면·숫자·이유를 담은 평범한 문장으로 쓴다."""
+이런 단정·요약형 결론 문장 대신, 구체적인 장면·숫자·이유를 담은 평범한 문장으로 쓴다.
+- "25년 차", "25년 동안", "25년의 관찰", "20년 넘게" 같은 경력 연수 자랑도 쓰지 않는다 (오글거린다)."""
 
 PATTERN = re.compile(
     r"전부(?:다|입니다|예요|이에요|였다|였어요|였습니다|야)(?=[\s.!?。,\"'”’]|$)"
@@ -28,7 +30,9 @@ PATTERN = re.compile(
     r"|(?:단순한|그냥)\s*\S+(?:이|가)\s*아니(?:라|다|에요|었)"
     r"|\bis\s+all\s+you\s+need|\ball\s+(?:you\s+need|it\s+takes)\s+is"
     r"|\bthat'?s\s+(?:it|all)\s*[.!]|\bjust\s+one\s+thing|\bhere'?s\s+the\s+thing"
-    r"|\bthe\s+secret\s+is|\b(?:isn'?t|is\s+not)\s+just\s+an?\s+[^.!?]{1,40}[,—–-]\s*it'?s",
+    r"|\bthe\s+secret\s+is|\b(?:isn'?t|is\s+not)\s+just\s+an?\s+[^.!?]{1,40}[,—–-]\s*it'?s"
+    # 이선생 저장소 전용 (2026-10-21): 경력 연수 자랑 ("25년 차", "25년의 관찰", "20년 넘게")
+    r"|(?<!\d)[12]\d\s*년\s*(?:차(?!\s*이상)|째|동안|간의|의\s*(?:경험|관찰|경력|직장)|경력|넘게|가까이)",
     re.I,
 )
 
