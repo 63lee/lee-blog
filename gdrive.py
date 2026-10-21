@@ -93,13 +93,25 @@ def _upload(token, path: Path, parent: str, name: str = "") -> str:
     return _req("POST", UPLOAD, token, body, {"Content-Type": f"multipart/related; boundary={boundary}"})["id"]
 
 
-def save(blog: str, day: str, title: str, files: list) -> str:
-    """'네이버용 블로그 글/{blog}/{day} {title}' 폴더에 파일들을 올린다. 폴더 경로를 돌려준다."""
+def _trash_same_name(token, parent: str, name: str):
+    """같은 폴더의 같은 이름 파일을 휴지통으로 보낸다 (다시 만든 클립을 교체할 때). 완전 삭제는 하지 않는다."""
+    q = f"name = '{name}' and '{parent}' in parents and trashed = false"
+    found = _req("GET", f"{API}?" + urllib.parse.urlencode({"q": q, "fields": "files(id)"}), token)
+    for f in found.get("files", []):
+        _req("PATCH", f"{API}/{f['id']}", token, json.dumps({"trashed": True}).encode(),
+             {"Content-Type": "application/json; charset=UTF-8"})
+
+
+def save(blog: str, day: str, title: str, files: list, replace: bool = False) -> str:
+    """'네이버용 블로그 글/{blog}/{day} {title}' 폴더에 파일들을 올린다. 폴더 경로를 돌려준다.
+    replace=True 면 같은 이름의 기존 파일을 휴지통으로 보내고 올린다."""
     token = _access_token()
     root = _folder(token, ROOT_NAME)
     blog_dir = _folder(token, blog, root)
     safe = "".join(c for c in title if c not in '\\/:*?"<>|')[:50].strip()
     post_dir = _folder(token, f"{day} {safe}", blog_dir)
     for f in files:
+        if replace:
+            _trash_same_name(token, post_dir, Path(f).name)
         _upload(token, Path(f), post_dir)
     return f"{ROOT_NAME}/{blog}/{day} {safe}"
