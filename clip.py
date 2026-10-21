@@ -402,12 +402,18 @@ def layer_text(sub, em, layout, path: Path):
     lines = sub.split("\n")
     em = [e for e in em if e in sub]
     if layout == "quote":
-        f, size = _fit(d, [x.replace("“", "").replace("”", "") for x in lines], 82, TITLE_FONT)
+        # 따옴표 안(대사)과 밖("대신", "처럼" 같은 말)을 나눈다. 밖의 말은 아래에 작은 고딕으로 따로 둔다.
+        m = re.match(r'\s*[“"](.+?)[”"]\s*(.*)$', sub, re.S)
+        quote, tail = (m.group(1), m.group(2).strip()) if m else (sub.replace("“", "").replace("”", ""), "")
+        qlines = [x.strip() for x in quote.split("\n") if x.strip()]
+        f, size = _fit(d, qlines, 82, TITLE_FONT)
         shadow_text(img, (80, 640), "“", font(220, TITLE_FONT), ACCENT + (255,), blur=6, alpha=120)
         y0 = 860
-        for k, x in enumerate(lines):
-            x = x.replace("“", "").replace("”", "")
+        for k, x in enumerate(qlines):
             shadow_text(img, (80, y0 + k * int(size * 1.45)), x, f, WHITE, blur=8, alpha=190)
+        if tail:
+            ty = y0 + len(qlines) * int(size * 1.45) + 30
+            shadow_text(img, (84, ty), tail.replace("\n", " "), font(56, SUB_FONT), ACCENT, blur=8, alpha=190)
     elif layout == "punch" and em:
         word = next(e for e in em)
         big, bsize = _fit(d, [word], 170, TITLE_FONT, floor=110)
