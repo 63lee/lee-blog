@@ -243,6 +243,7 @@ def save_naver_version(draft: dict, url: str) -> None:
 
 def save_clip(draft: dict) -> bool:
     """글로 네이버 클립·인스타 릴스 영상(9:16)을 만들어 드라이브 '[클립] 제목' 폴더에 저장한다 (2026-10-20).
+    2026-10-29: 글에 맞춰 정보형·후킹 리스트형·현장형 중 하나로, 내레이션 없이 만든다 (clipstyle.py).
     영상·표지·캡션 2개가 들어간다. 대본 JSON 은 posts/ 에 남긴다. 실패해도 발행에는 영향 없음."""
     import gdrive
     if os.environ.get("CLIP_MODE", "drive") == "off":
@@ -254,25 +255,23 @@ def save_clip(draft: dict) -> bool:
         import json
         import tempfile
         from anthropic import Anthropic
-        import clip
-        import clipwriter
+        import clipstyle
         from writer import MODEL
         client = Anthropic()
         title = draft["titles"][0]
-        job = clipwriter.make_job(client, MODEL, title, draft["body_html"])
-        # 영상 작업 파일(배경 영상 등)은 저장소에 올리지 않도록 임시 폴더에서 만든다
-        tmp = Path(tempfile.mkdtemp())
-        job_path = tmp / "clip.json"
-        job_path.write_text(json.dumps(job, ensure_ascii=False, indent=2), encoding="utf-8")
-        out = tmp / "out"
-        final = clip.build(job_path, picker=clip.vision_picker(client, MODEL, job["title"]), out=out)
+        job = clipstyle.make_job(client, MODEL, title, draft["body_html"])
+        # 영상 작업 파일(장면 사진 등)은 저장소에 올리지 않도록 임시 폴더에서 만든다
+        out = Path(tempfile.mkdtemp()) / "out"
         img_dir = Path(draft["_img_dir"])
+        video = clipstyle.build(job, out, client, MODEL, backdrop=img_dir / "photo1.jpg")
         (img_dir.parent / (img_dir.name.replace("-images", "") + "-clip.json")).write_text(
-            job_path.read_text(encoding="utf-8"), encoding="utf-8")
+            json.dumps(job, ensure_ascii=False, indent=2), encoding="utf-8")
+        final = video.with_name(f"{title[:40]}_클립.mp4".replace("/", " "))
+        video.rename(final)
         files = [p for p in (final, out / "cover.jpg", out / "caption_naver.txt", out / "caption_instagram.txt")
                  if p.exists()]
         where = gdrive.save("이선생", datetime.now().strftime("%Y-%m-%d"), f"[클립] {title}", files)
-        log(f"  클립 저장: 구글 드라이브/{where}")
+        log(f"  클립 저장: 구글 드라이브/{where} ({job['style']})")
         return True
     except Exception as exc:
         log(f"  [경고] 클립 만들기 실패 ({type(exc).__name__}: {exc})")

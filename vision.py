@@ -5,7 +5,9 @@
 사진이 걸린다. 후보 미리보기(작은 이미지 주소)를 최대 10장 보여 주고 고르게 한다.
 실패하면 None 을 돌려주고, 호출 쪽은 원래 순서대로 쓴다.
 """
+import base64
 import json
+import urllib.request
 
 PROMPT = """블로그 글에 넣을 사진을 고른다.
 
@@ -25,7 +27,17 @@ def choose(client, model: str, title: str, summary: str, image_urls: list, k: in
     urls = image_urls[:10]
     if len(urls) < 2:
         return None
-    content = [{"type": "image", "source": {"type": "url", "url": u}} for u in urls]
+    # Pixabay 주소는 robots.txt 때문에 Claude 가 직접 못 읽는다(400) → 받아서 데이터로 보낸다 (2026-10-29)
+    content = []
+    for u in urls:
+        try:
+            req = urllib.request.Request(u, headers={"User-Agent": "Mozilla/5.0"})
+            raw = urllib.request.urlopen(req, timeout=20).read()
+            kind = "image/png" if raw[1:4] == b"PNG" else "image/webp" if raw[8:12] == b"WEBP" else "image/jpeg"
+            content.append({"type": "image", "source": {"type": "base64", "media_type": kind,
+                                                        "data": base64.b64encode(raw).decode()}})
+        except Exception:
+            content.append({"type": "text", "text": "(이 번호 사진은 불러오지 못함 — 고르지 않는다)"})
     content.append({"type": "text", "text": PROMPT.format(title=title, summary=summary[:600],
                                                          n=len(urls), k=k)})
     try:
