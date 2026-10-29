@@ -122,7 +122,7 @@ def hook_layers(job, sc, acc):
     """(먼저 뜨는 위쪽 레이어, 조금 뒤 뜨는 아래 레이어)"""
     top = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     d = ImageDraw.Draw(top)
-    d.text((X0, 96), job.get("channel", "역삼동 이선생"), font=F("ExtraBold", 34), fill=WHITE)
+    # 채널 이름은 넣지 않는다 (2026-10-29 사용자: 붙박이처럼 고정돼 부담스럽다)
     tag = sc.get("tag", "")
     y = 160
     if tag:
@@ -226,6 +226,37 @@ def place_end(job, bg, acc):
     return img, lay
 
 
+# ---------- 자르지 않는 모드 ----------
+# 2026-10-29 사용자: "클립은 원본 이미지로 만들어. 자르지말고." — 공식·직접 찍은 사진은 화면을 채우려고 자르지 않는다.
+# 어두운 바탕 가운데에 사진 전체를 놓고, 위에 헤드라인·아래에 설명. 흐린 사진으로 여백을 채우지도 않는다.
+FIT_BG = (17, 17, 19)
+FIT_BOX = {"hook": (40, 470, W - 40, 1450), "place": (40, 300, W - 40, 1100)}
+
+
+def fit_base(path, box) -> Image.Image:
+    """상자 안에 다 들어가는 크기(조금 커지는 움직임을 위해 3% 여유)로 줄인 원본."""
+    im = Image.open(path).convert("RGB")
+    bw, bh = box[2] - box[0], box[3] - box[1]
+    s = min(bw / im.width, bh / im.height) * 1.03
+    return im.resize((round(im.width * s), round(im.height * s)), Image.LANCZOS)
+
+
+def fit_frame(big, box, p, credit="") -> Image.Image:
+    """사진 전체가 보이게 상자 가운데. p 에 따라 97% → 100% 로 아주 천천히 커진다."""
+    z = (1 - 0.03 * (1 - ease(p))) / 1.03
+    im = big.resize((round(big.width * z), round(big.height * z)), Image.BILINEAR)
+    canvas = Image.new("RGB", (W, H), FIT_BG)
+    cx, cy = (box[0] + box[2]) // 2, (box[1] + box[3]) // 2
+    x, y = cx - im.width // 2, cy - im.height // 2
+    canvas.paste(im, (x, y))
+    if credit:
+        d = ImageDraw.Draw(canvas)
+        f = F("Medium", 24)
+        d.text((x + im.width - d.textlength(f"© {credit}", font=f), y + im.height + 12), f"© {credit}",
+               font=f, fill=(150, 150, 150))
+    return canvas
+
+
 # ---------- 조립 ----------
 def scene_dur(job, sc):
     if job["style"] == "hook":
@@ -235,8 +266,9 @@ def scene_dur(job, sc):
     return min(max(1.4 + n / 9, 3.0), 4.6)
 
 
-def render(job, photos: list, out: Path) -> float:
-    """photos: 장면마다 사진 경로 (모자라면 돌려 쓴다)."""
+def render(job, photos: list, out: Path, fit: bool = False, credits: list = None) -> float:
+    """photos: 장면마다 사진 경로 (모자라면 돌려 쓴다).
+    fit=True 면 사진을 자르지 않고 어두운 바탕 가운데에 통째로 놓는다. credits: 사진마다 ⓒ 출처 이름."""
     acc = ACCENTS.get(job.get("accent", "lime"), ACCENTS["lime"])
     style = job["style"]
     top_shade = gradient(0, 760, 170, 0) if style == "hook" else gradient(0, 420, 120, 0)
@@ -250,7 +282,10 @@ def render(job, photos: list, out: Path) -> float:
                           "-c:a", "aac", "-movflags", "+faststart", str(out)], stdin=subprocess.PIPE)
     total, prev = 0.0, None
     for i, sc in enumerate(job["scenes"]):
-        bg = prep(photos[i % len(photos)])
+        photo = photos[i % len(photos)]
+        credit = (credits or [""] * len(photos))[i % len(photos)]
+        box = FIT_BOX.get(style, FIT_BOX["hook"])
+        bg = fit_base(photo, box) if fit else prep(photo)
         if style == "hook":
             top, bot = hook_layers(job, sc, acc)
         else:
@@ -259,8 +294,11 @@ def render(job, photos: list, out: Path) -> float:
         n = round(dur * FPS)
         for k in range(n):
             t = k / FPS
-            img = frame(bg, MOVES[i % len(MOVES)], k / n).convert("RGBA")
-            img.alpha_composite(shade)
+            if fit:
+                img = fit_frame(bg, box, k / n, credit).convert("RGBA")
+            else:
+                img = frame(bg, MOVES[i % len(MOVES)], k / n).convert("RGBA")
+                img.alpha_composite(shade)
             img.alpha_composite(faded(top, ease(t / 0.35), int(24 * (1 - ease(t / 0.35)))))
             img.alpha_composite(faded(bot, ease((t - 0.35) / 0.35), int(30 * (1 - ease((t - 0.35) / 0.35)))))
             img = img.convert("RGB")
@@ -272,6 +310,8 @@ def render(job, photos: list, out: Path) -> float:
     # 끝 화면
     first = Image.open(photos[0]).convert("RGB")
     base, lay = (hook_end if style == "hook" else place_end)(job, first, acc)
+    if fit:  # 끝 화면도 흐린 사진 대신 같은 어두운 바탕
+        base = Image.new("RGBA", (W, H), FIT_BG + (255,))
     n = round(4.2 * FPS)
     for k in range(n):
         img = base.copy()

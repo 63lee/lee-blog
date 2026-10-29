@@ -1,0 +1,95 @@
+name: Brand sigan (Naver only)
+
+# [브랜드시선] 매일 1편 — 원고·썸네일·사진·클립 2종(정보형·후킹형)을 드라이브 '네이버용 블로그 글/이선생/날짜 [브랜드시선] 제목' 에 저장.
+# 블로그 발행은 하지 않는다 (네이버엔 사용자가 직접 올린다). 기준: brand_spec.md
+on:
+  schedule:
+    # 18:00 UTC = 03:00 KST
+    - cron: "0 18 * * *"
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: "소재 지정 (비우면 자동 선택). 예: 재혼황후 팝업"
+        required: false
+        default: ""
+      form:
+        description: "글 형태 (brand_spec 2-1). 예: 콘텐츠·PPL형"
+        required: false
+        default: ""
+      note:
+        description: "이번 글 방향 메모"
+        required: false
+        default: ""
+
+concurrency:
+  group: lee-brand
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: pip install -r requirements.txt
+
+      - name: Check secrets
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
+          GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
+          GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
+        run: |
+          missing=""
+          for n in ANTHROPIC_API_KEY GDRIVE_CLIENT_ID GDRIVE_CLIENT_SECRET GDRIVE_REFRESH_TOKEN; do
+            [ -z "${!n}" ] && missing="$missing $n"
+          done
+          if [ -n "$missing" ]; then echo "::error::등록되지 않은 Secrets:$missing"; exit 1; fi
+          echo "필수 Secrets 확인됨"
+
+      - name: Write post and clips
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          PIXABAY_API_KEY: ${{ secrets.PIXABAY_API_KEY }}
+          GDRIVE_CLIENT_ID: ${{ secrets.GDRIVE_CLIENT_ID }}
+          GDRIVE_CLIENT_SECRET: ${{ secrets.GDRIVE_CLIENT_SECRET }}
+          GDRIVE_REFRESH_TOKEN: ${{ secrets.GDRIVE_REFRESH_TOKEN }}
+          NAVER_AD_CUSTOMER_ID: ${{ secrets.NAVER_AD_CUSTOMER_ID }}
+          NAVER_AD_API_KEY: ${{ secrets.NAVER_AD_API_KEY }}
+          NAVER_AD_SECRET: ${{ secrets.NAVER_AD_SECRET }}
+          TOPIC: ${{ github.event.inputs.topic }}
+          FORM: ${{ github.event.inputs.form }}
+          NOTE: ${{ github.event.inputs.note }}
+          PYTHONIOENCODING: utf-8
+          # 러너는 UTC 라 03:00 KST 실행이 전날 날짜가 된다. 날짜를 한국 기준으로.
+          TZ: Asia/Seoul
+        run: |
+          args=()
+          [ -n "$TOPIC" ] && args+=("$TOPIC")
+          [ -n "$FORM" ] && args+=("--form=$FORM")
+          [ -n "$NOTE" ] && args+=("--note=$NOTE")
+          python -u brand.py "${args[@]}"
+
+      - name: Commit history
+        if: always()
+        run: |
+          git config user.name "lee-blog-bot"
+          git config user.email "actions@github.com"
+          [ -e data/brand_history.json ] && git add data/brand_history.json
+          git diff --staged --quiet && exit 0
+          git commit -m "chore: brand run log $(date -u +%Y-%m-%d)"
+          for i in 1 2 3; do
+            git push && exit 0
+            git pull --rebase origin main || exit 1
+          done
+          echo "::error::기록 푸시 실패"; exit 1

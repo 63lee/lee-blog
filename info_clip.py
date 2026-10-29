@@ -56,6 +56,8 @@ def auto_dur(sc):
     """타이핑·등장 시간 + 읽을 시간으로 장면 길이를 정한다."""
     typ = lambda xs: sum(len(x) for x in xs) / CPS + 0.12 * len(xs)  # noqa: E731
     k = sc["type"]
+    if k == "photo":
+        return 2.6
     if k == "hook":
         return round(typ(sc["lines"]) + (1.0 if sc.get("sub") else 0) + 1.6, 1)
     if k == "quote":
@@ -109,7 +111,7 @@ def base(job, idx, t_total, bg=None):
     # 맨 위: 진행 막대 + 채널 이름
     d.rectangle([0, 0, W, 10], fill=LINE)
     d.rectangle([0, 0, int(W * t_total), 10], fill=AMBER)
-    d.text((X0, 150), job["channel"], font=F("SemiBold", 34), fill=SUBINK)
+    # 채널 이름은 넣지 않는다 (2026-10-29 사용자: 붙박이처럼 고정돼 부담스럽다)
     pg = f"{idx + 1} / {len(job['scenes'])}"
     d.text((X1 - d.textlength(pg, font=F("Medium", 32)), 152), pg, font=F("Medium", 32), fill=SUBINK)
     d.line([(X0, 214), (X1, 214)], fill=LINE, width=3)
@@ -281,7 +283,27 @@ def s_end(img, d, sc, t):
         appear(img, lay, t, start + 0.1)
 
 
-DRAW = {"quote": s_quote, "hook": s_hook, "cards": s_cards, "table": s_table, "list": s_list, "end": s_end}
+def s_photo(img, d, sc, t):
+    """원본 사진 한 장을 자르지 않고 통째로 (2026-10-29 사용자: 원본 이미지로, 자르지 말고)."""
+    if "_im" not in sc:
+        im = Image.open(sc["src"]).convert("RGB")
+        bw, bh = X1 - X0 + 60, 1180
+        s = min(bw / im.width, bh / im.height)
+        sc["_im"] = im.resize((round(im.width * s), round(im.height * s)), Image.LANCZOS).convert("RGBA")
+    im = sc["_im"]
+    y = 300 + (1180 - im.height) // 2
+    lay = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    lay.paste(im, ((X0 + X1 + 60) // 2 - im.width // 2, y))
+    ld = ImageDraw.Draw(lay)
+    if sc.get("credit"):
+        f = F("Medium", 28)
+        c = f"© {sc['credit']}"
+        ld.text(((X0 + X1 + 60) // 2 + im.width // 2 - ld.textlength(c, font=f), y + im.height + 14), c,
+                font=f, fill=SUBINK)
+    appear(img, lay, t, 0.0, dy=24)
+
+
+DRAW = {"photo": s_photo, "quote": s_quote, "hook": s_hook, "cards": s_cards, "table": s_table, "list": s_list, "end": s_end}
 
 
 def render(job, out: Path):

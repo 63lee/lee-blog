@@ -27,7 +27,7 @@ ROOT = Path(__file__).parent
 RECENT = ROOT / "data" / "clip_styles.json"
 
 PROMPT = """아래 블로그 글로 네이버 클립(인스타 릴스 겸용) 세로 영상을 만든다. **내레이션 없이 화면 글자만으로** 전달하는 영상이다.
-글쓴이는 회사 생활을 오래 한 직장 선배 '역삼동이선생'(여성). '25년' 같은 경력 연수는 말하지 않는다.
+글쓴이는 회사 생활을 오래 한 브랜드 마케터 출신 직장 선배 '역삼동이선생'(여성). 시리즈: {series}. 딸 써니는 스무 살. '25년' 같은 경력 연수는 말하지 않는다.
 
 [글 제목] {title}
 [글 본문]
@@ -46,7 +46,7 @@ PROMPT = """아래 블로그 글로 네이버 클립(인스타 릴스 겸용) �
   **바로 써먹을 수 있는 구체적인 것**(문장·숫자·기준·체크 항목)을 화면에 준다. 더 자세한 건 블로그로 보낸다.
 - 첫 화면에서 멈추게 한다: 공감 가는 상황이나 의외의 답을 짧게.
 - 화면 글자는 짧게. 평어체(~다) 또는 명사로 끝낸다. 마지막 질문만 "~있나요?" 같은 물음.
-- 글에 없는 사실·숫자·일화를 지어내지 않는다.
+- 글에 없는 사실·숫자·일화를 지어내지 않는다. 인물 설명도 글에 있는 만큼만 (써니 나이·학년, 후배 직급을 덧붙이지 않는다).
 - 대사·바꿔 말할 문장은 “ ” 로 감싼다.
 - accent: 강조색. 글 분위기에 맞게 고른다.
   info → "amber" "coral" "teal" "blue" "green" 중 하나 / hook·place → "lime" "amber" "coral" "sky" "mint" "pink" 중 하나.
@@ -84,7 +84,7 @@ lines 2~3줄(한 줄 11자 이내). question 은 댓글을 부르는 질문 하�
 
 ## 5. 캡션
 - caption: 네이버 클립 캡션. 3~4줄 요약 + "연결된 블로그 글에 정리해 뒀다" + 질문 1개 + 해시태그 8~9개
-  (#역삼동이선생 #슬기로운직장생활 포함).
+  (#역삼동이선생 #{series_tag} 포함).
 - caption_instagram: 핵심 2줄 + "프로필 링크의 블로그 글" 안내 + 저장 유도 1줄 + 질문 1개 + 해시태그 6~7개.
 - cover: 표지에 크게 쓸 제목 2~3줄 (한 줄 8자 안팎, 마지막 줄이 강조색).
 
@@ -123,14 +123,17 @@ def _ok(job) -> bool:
     return bool(job.get("end", {}).get("lines"))
 
 
-def make_job(client, model: str, title: str, body_html: str, style: str = None) -> dict:
-    """style 을 주면 그 스타일로 만든다 (사용자가 스타일을 정해 다시 만들 때)."""
+def make_job(client, model: str, title: str, body_html: str, style: str = None,
+             series: str = "슬기로운 직장생활") -> dict:
+    """style 을 주면 그 스타일로 만든다 (사용자가 스타일을 정해 다시 만들 때).
+    series: 블로그 시리즈 이름 — 화면 위 채널 이름과 해시태그에 쓴다 (2026-10-29 브랜드시선 추가)."""
     rec = _recent()
     recent = (f"\n최근 클립 스타일: {', '.join(rec)}. 글 재료가 둘 다 맞으면 최근과 다른 쪽을 고른다.\n"
               if rec else "")
     if style:
         recent = f"\n**이번에는 반드시 \"{style}\" 스타일로 만든다** (사용자 지정).\n"
-    prompt = PROMPT.format(title=title, body=_plain(body_html)[:7000], recent=recent, cliche_rule=cliche.RULE)
+    prompt = PROMPT.format(title=title, body=_plain(body_html)[:7000], recent=recent, cliche_rule=cliche.RULE,
+                           series=series, series_tag=series.replace(" ", ""))
     last = None
     for _ in range(2):
         # thinking 모델이라 max_tokens 가 작으면 빈 답이 온다
@@ -148,7 +151,7 @@ def make_job(client, model: str, title: str, body_html: str, style: str = None) 
         raise ValueError(f"클립 대본을 읽지 못함: {last}")
     cliche.scrub_fields(client, model, job, ("caption", "caption_instagram"), "평어체")
     job["title"] = title
-    job.setdefault("channel", "역삼동 이선생 · 슬기로운 직장생활" if job["style"] == "info" else "역삼동 이선생")
+    job.setdefault("channel", f"역삼동 이선생 · {series}" if job["style"] == "info" else "역삼동 이선생")
     print(f"  클립 스타일: {job['style']} / {job.get('accent')} — {job.get('why', '')}")
     return job
 
@@ -197,7 +200,7 @@ def _choose(client, model, title, text, hits) -> int:
             content.append({"type": "text", "text": "(불러오지 못함 — 탈락)"})
     content.append({"type": "text", "text": PICK.format(n=len(hits), title=title, text=text)})
     try:
-        resp = client.messages.create(model=model, max_tokens=4000, messages=[{"role": "user", "content": content}])
+        resp = client.messages.create(model=model, max_tokens=16000, messages=[{"role": "user", "content": content}])
         out = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
         k = int(json.loads(out[out.index("{"): out.rindex("}") + 1])["pick"])
         return k if -1 <= k < len(hits) else -1
@@ -254,12 +257,19 @@ def match_photos(client, model, job, photos: list) -> list:
     import io
     from PIL import Image
     content = []
+    credit = {}  # 원고 폴더의 사진출처.txt 가 있으면 출처도 알려 준다 (다른 브랜드 사진이 엉뚱한 장면에 가지 않게)
+    src = photos[0].parent.parent / "사진출처.txt" if photos else None
+    if src and src.exists():
+        for line in src.read_text(encoding="utf-8").splitlines():
+            parts = line.split("\t")
+            if len(parts) >= 2:
+                credit[parts[0]] = parts[1]
     for i, p in enumerate(photos[:20]):
         im = Image.open(p).convert("RGB")
         im.thumbnail((400, 400))
         buf = io.BytesIO()
         im.save(buf, "JPEG", quality=80)
-        content += [{"type": "text", "text": f"사진 {i}"},
+        content += [{"type": "text", "text": f"사진 {i}" + (f" (출처: {credit[p.name]})" if p.name in credit else "")},
                     {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg",
                                                  "data": base64.b64encode(buf.getvalue()).decode()}}]
     subs = "\n".join(f"{k}: {sc.get('sub') or ' / '.join(sc.get('head', []))}".replace("\n", " ")
@@ -267,9 +277,11 @@ def match_photos(client, model, job, photos: list) -> list:
     content.append({"type": "text", "text": f"""위 사진 {len(content) // 2}장으로 세로 클립을 만든다. 장면 자막은 아래와 같다.
 {subs}
 장면마다 자막 내용과 가장 맞는 사진 번호를 하나씩 고른다. 같은 사진은 되도록 두 번 쓰지 않는다.
-첫 장면은 장소 전체가 보이는 시원한 사진. 다음 JSON 하나만 출력한다: {{"photos": [번호, ...]}}"""})
+자막과 어긋나는 사진은 쓰지 않는다: 자막이 말하는 브랜드·행사·장소와 다른 출처의 사진을 그 장면에 놓지 않는다
+(예: 디즈니 팝업 이야기에 편의점 상품 사진). 자막에 한 번도 나오지 않는 브랜드의 사진은 어느 장면에도 쓰지 않는다. 맞는 사진이 없으면 그 작품·브랜드의 대표 사진(포스터 등)을 쓴다.
+첫 장면은 주제가 한눈에 보이는 사진. 다음 JSON 하나만 출력한다: {{"photos": [번호, ...]}}"""})
     try:
-        resp = client.messages.create(model=model, max_tokens=4000, messages=[{"role": "user", "content": content}])
+        resp = client.messages.create(model=model, max_tokens=16000, messages=[{"role": "user", "content": content}])
         text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
         idx = json.loads(text[text.index("{"): text.rindex("}") + 1])["photos"]
         picked = [photos[int(i)] for i in idx if 0 <= int(i) < len(photos)]
@@ -282,15 +294,29 @@ def match_photos(client, model, job, photos: list) -> list:
 
 
 # ---------- 조립 ----------
-def build(job: dict, out: Path, client=None, model=None, photo_dir: Path = None, backdrop: Path = None) -> Path:
+def build(job: dict, out: Path, client=None, model=None, photo_dir: Path = None, backdrop: Path = None,
+          remember: bool = True) -> Path:
     """영상·표지·캡션을 out 폴더에 만든다. 돌려주는 값은 영상 경로."""
     out.mkdir(parents=True, exist_ok=True)
     video = out / "clip.mp4"
     (out / "clip.json").write_text(json.dumps(job, ensure_ascii=False, indent=2), encoding="utf-8")
     style = job["style"]
+    credit_of = {}
+    if photo_dir:  # 원고 폴더의 사진출처.txt (파일 이름 → ⓒ 이름)
+        src = Path(photo_dir).parent / "사진출처.txt"
+        if src.exists():
+            for line in src.read_text(encoding="utf-8").splitlines():
+                parts = line.split("\t")
+                if len(parts) >= 2:
+                    credit_of[parts[0]] = parts[1]
     if style == "info":
         import info_clip
         scenes = [dict(sc) for sc in job["scenes"]]
+        if photo_dir:  # 원본 사진은 배경으로 흐리게 깔지 않고, 장면 사이에 통째로 끼운다
+            photos = sorted(p for p in Path(photo_dir).iterdir() if p.suffix.lower() in (".jpg", ".jpeg", ".png"))
+            for k, ph in enumerate(photos[:3]):
+                scenes.insert(1 + k * 3, {"type": "photo", "src": str(ph), "credit": credit_of.get(ph.name, "")})
+            backdrop = None
         scenes.append({"type": "end", **job["end"]})
         render_job = {"channel": job["channel"], "accent": job.get("accent"), "theme": job.get("theme", "paper"),
                       "bg": str(backdrop) if backdrop and backdrop.exists() else None, "scenes": scenes}
@@ -304,7 +330,8 @@ def build(job: dict, out: Path, client=None, model=None, photo_dir: Path = None,
                 photos = match_photos(client, model, job, photos)
         else:
             photos = scene_photos(client, model, job, out / "photos")
-        total = photo_clip.render(job, photos, video)
+        total = photo_clip.render(job, photos, video, fit=bool(photo_dir),
+                                  credits=[credit_of.get(Path(p).name, "") for p in photos])
         cover_t = photo_clip.scene_dur(job, job["scenes"][0]) - 0.2
     # 표지: 첫 장면 글자가 다 나온 순간
     subprocess.run([FF, "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{max(cover_t, 0.5):.2f}",
@@ -312,7 +339,8 @@ def build(job: dict, out: Path, client=None, model=None, photo_dir: Path = None,
     (out / "caption_naver.txt").write_text(job.get("caption", ""), encoding="utf-8")
     if job.get("caption_instagram"):
         (out / "caption_instagram.txt").write_text(job["caption_instagram"], encoding="utf-8")
-    _remember(style)
+    if remember:  # 브랜드시선처럼 스타일을 정해서 만든 클립은 직장생활 클립의 '최근 스타일'에 넣지 않는다
+        _remember(style)
     print(f"[ok] {video} ({style}, {total:.1f}초)")
     return video
 
@@ -323,7 +351,8 @@ if __name__ == "__main__":
     from anthropic import Anthropic
     from writer import MODEL
     force = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--style=")), None)  # 예: --style=info
-    sys.argv = [a for a in sys.argv if not a.startswith("--style=")]
+    series = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--series=")), "슬기로운 직장생활")
+    sys.argv = [a for a in sys.argv if not a.startswith(("--style=", "--series="))]
     src = Path(sys.argv[1])
     out = Path(sys.argv[2]) if len(sys.argv) > 2 else src.with_suffix("")
     photo_dir = Path(sys.argv[3]) if len(sys.argv) > 3 else None
@@ -334,6 +363,6 @@ if __name__ == "__main__":
         html = src.read_text(encoding="utf-8")
         m = re.search(r"<title>(.*?)</title>|<h1[^>]*>(.*?)</h1>|^#[ \t]+([^\n]+)", html, re.S | re.M)
         title = re.sub(r"<[^>]+>", "", (m.group(1) or m.group(2) or m.group(3))).strip() if m else src.stem
-        job = make_job(client, MODEL, title, html, force)
+        job = make_job(client, MODEL, title, html, force, series)
     imgs = src.parent / (src.stem + "-images")
     build(job, out, client, MODEL, photo_dir, backdrop=imgs / "photo1.jpg")
