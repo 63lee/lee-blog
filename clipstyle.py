@@ -123,10 +123,13 @@ def _ok(job) -> bool:
     return bool(job.get("end", {}).get("lines"))
 
 
-def make_job(client, model: str, title: str, body_html: str) -> dict:
+def make_job(client, model: str, title: str, body_html: str, style: str = None) -> dict:
+    """style 을 주면 그 스타일로 만든다 (사용자가 스타일을 정해 다시 만들 때)."""
     rec = _recent()
     recent = (f"\n최근 클립 스타일: {', '.join(rec)}. 글 재료가 둘 다 맞으면 최근과 다른 쪽을 고른다.\n"
               if rec else "")
+    if style:
+        recent = f"\n**이번에는 반드시 \"{style}\" 스타일로 만든다** (사용자 지정).\n"
     prompt = PROMPT.format(title=title, body=_plain(body_html)[:7000], recent=recent, cliche_rule=cliche.RULE)
     last = None
     for _ in range(2):
@@ -136,7 +139,7 @@ def make_job(client, model: str, title: str, body_html: str) -> dict:
         text = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
         try:
             job = json.loads(text[text.index("{"): text.rindex("}") + 1])
-            if _ok(job):
+            if _ok(job) and (not style or job["style"] == style):
                 break
             last = "형식 불일치"
         except ValueError as exc:
@@ -164,33 +167,75 @@ def _pixabay(query: str, orientation: str) -> list:
     return json.loads(urllib.request.urlopen(req, timeout=20).read()).get("hits", [])
 
 
+PICK = """세로 클립 한 장면의 배경 사진을 고른다. 위 사진 {n}장(0번부터).
+[클립 주제] {title}
+[이 장면에 얹을 글자] {text}
+
+반드시 지킬 것 — 하나라도 어기면 그 사진은 탈락:
+- 사진 안에 글자·숫자·연도·로고·손글씨가 읽히면 탈락 (화면 글자와 겹쳐 지저분해진다)
+- 사람 얼굴이 보이면 탈락 (손·뒷모습·실루엣은 괜찮다)
+- 침대·잠옷·성당·관광지·CG·일러스트처럼 직장 장면과 상관없으면 탈락
+남은 사진 중 장면 글자와 분위기가 맞고, 위쪽이 단순해 글자를 얹기 좋은 것을 고른다.
+모두 탈락이면 -1. JSON 하나만: {{"pick": 번호}}"""
+
+FALLBACK = ["desk notebook coffee", "office window light", "laptop keyboard hands",
+            "paper documents desk", "pen notebook writing", "empty office chair"]
+
+
+def _choose(client, model, title, text, hits) -> int:
+    """후보 사진을 받아서(base64) Claude 에게 보여 준다. 마땅한 게 없으면 -1."""
+    import base64
+    content = []
+    for h in hits:
+        try:
+            req = urllib.request.Request(h["webformatURL"], headers={"User-Agent": "Mozilla/5.0"})
+            raw = urllib.request.urlopen(req, timeout=20).read()
+            kind = "image/png" if raw[1:4] == b"PNG" else "image/jpeg"
+            content.append({"type": "image", "source": {"type": "base64", "media_type": kind,
+                                                        "data": base64.b64encode(raw).decode()}})
+        except Exception:
+            content.append({"type": "text", "text": "(불러오지 못함 — 탈락)"})
+    content.append({"type": "text", "text": PICK.format(n=len(hits), title=title, text=text)})
+    try:
+        resp = client.messages.create(model=model, max_tokens=4000, messages=[{"role": "user", "content": content}])
+        out = "".join(b.text for b in resp.content if getattr(b, "type", "") == "text")
+        k = int(json.loads(out[out.index("{"): out.rindex("}") + 1])["pick"])
+        return k if -1 <= k < len(hits) else -1
+    except Exception as exc:
+        print(f"  [경고] 사진 고르기 실패 ({type(exc).__name__})")
+        return 0
+
+
 def scene_photos(client, model, job, out_dir: Path) -> list:
-    """장면마다 Pixabay 세로 사진 1장. 후보를 Claude 가 보고 고른다. 이미 쓴 사진은 피한다."""
+    """장면마다 Pixabay 세로 사진 1장. 후보를 Claude 가 보고 고르고, 마땅한 게 없으면 다른 검색어로 다시 찾는다.
+    (2026-10-29: 연도가 찍힌 다이어리, 성당, 얼굴 나온 회의 사진이 걸려서 탈락 기준을 엄격히 했다)"""
     import images
-    import vision
     out_dir.mkdir(parents=True, exist_ok=True)
-    used = images._used_ids() | set()
+    used = set(images._used_ids())
     paths = []
     for i, sc in enumerate(job["scenes"]):
-        q = sc.get("query") or "office desk"
-        try:
-            hits = _pixabay(q, "vertical")
-            if len(hits) < 4:
-                hits += _pixabay(q, "all")
-        except Exception as exc:
-            print(f"  [경고] 사진 검색 실패 ({type(exc).__name__})")
-            hits = []
-        hits = [h for h in hits if f"pixabay-{h['id']}" not in used]
-        if not hits:
+        text = " / ".join(sc.get("head", [])) or sc.get("sub", "")
+        hit = None
+        for q in [sc.get("query") or "office desk"] + FALLBACK[i % len(FALLBACK):] + FALLBACK[:i % len(FALLBACK)]:
+            try:
+                hits = _pixabay(q, "vertical")
+                if len(hits) < 4:
+                    hits += _pixabay(q, "all")
+            except Exception as exc:
+                print(f"  [경고] 사진 검색 실패 ({type(exc).__name__})")
+                continue
+            hits = [h for h in hits if f"pixabay-{h['id']}" not in used][:8]
+            if not hits:
+                continue
+            k = _choose(client, model, job["title"], text, hits) if client else 0
+            if k >= 0:
+                hit = hits[k]
+                break
+            print(f"  장면 {i + 1}: '{q}' 후보 탈락, 다른 검색어로")
+        if hit is None:  # 끝까지 없으면 앞 장면 사진을 다시 쓴다 (장면과 사진 순서가 어긋나지 않게)
+            if paths:
+                paths.append(paths[-1])
             continue
-        pick = 0
-        if len(hits) >= 3 and client:
-            text = " / ".join(sc.get("head", [])) or sc.get("sub", "")
-            ch = vision.choose(client, model, job["title"], f"이 장면 글자: {text}. 이 사진 위에 글자를 얹는다. 사진 안에 글자·숫자·손글씨가 보이는 것, "
-                               f"사람 얼굴이 크게 나온 것, 침대·잠옷 사진은 고르지 않는다.",
-                               [h["webformatURL"] for h in hits[:8]], 0)
-            pick = ch["thumb"] if ch else 0
-        hit = hits[pick]
         path = out_dir / f"scene{i:02d}.jpg"
         req = urllib.request.Request(hit["largeImageURL"], headers={"User-Agent": "Mozilla/5.0"})
         path.write_bytes(urllib.request.urlopen(req, timeout=30).read())
@@ -277,6 +322,8 @@ if __name__ == "__main__":
     load_dotenv(ROOT / ".env")
     from anthropic import Anthropic
     from writer import MODEL
+    force = next((a.split("=", 1)[1] for a in sys.argv if a.startswith("--style=")), None)  # 예: --style=info
+    sys.argv = [a for a in sys.argv if not a.startswith("--style=")]
     src = Path(sys.argv[1])
     out = Path(sys.argv[2]) if len(sys.argv) > 2 else src.with_suffix("")
     photo_dir = Path(sys.argv[3]) if len(sys.argv) > 3 else None
@@ -287,6 +334,6 @@ if __name__ == "__main__":
         html = src.read_text(encoding="utf-8")
         m = re.search(r"<title>(.*?)</title>|<h1[^>]*>(.*?)</h1>|^#[ \t]+([^\n]+)", html, re.S | re.M)
         title = re.sub(r"<[^>]+>", "", (m.group(1) or m.group(2) or m.group(3))).strip() if m else src.stem
-        job = make_job(client, MODEL, title, html)
+        job = make_job(client, MODEL, title, html, force)
     imgs = src.parent / (src.stem + "-images")
     build(job, out, client, MODEL, photo_dir, backdrop=imgs / "photo1.jpg")
