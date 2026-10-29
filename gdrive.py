@@ -56,7 +56,9 @@ def _req(method, url, token, body=None, headers=None):
 
 
 def _folder(token, name, parent=None) -> str:
-    q = f"name = '{name}' and mimeType = '{FOLDER}' and trashed = false"
+    # 이름에 ' 가 들어가면(예: '다다음날 깨는 술') 검색식이 깨져 400 이 났다 (2026-10-29) → \ 와 ' 를 이스케이프
+    safe = name.replace("\\", "\\\\").replace("'", "\\'")
+    q = f"name = '{safe}' and mimeType = '{FOLDER}' and trashed = false"
     if parent:
         q += f" and '{parent}' in parents"
     found = _req("GET", f"{API}?" + urllib.parse.urlencode({"q": q, "fields": "files(id)"}), token)
