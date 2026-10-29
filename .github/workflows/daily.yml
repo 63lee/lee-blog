@@ -90,7 +90,7 @@ jobs:
         run: |
           git config user.name "lee-blog-bot"
           git config user.email "actions@github.com"
-          for f in data/history.json data/uploaded.json data/used_photos.json posts; do
+          for f in data/history.json data/uploaded.json data/used_photos.json data/clip_styles.json posts; do
             [ -e "$f" ] && git add "$f"
           done
           git diff --staged --quiet && exit 0
