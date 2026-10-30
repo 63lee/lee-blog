@@ -354,18 +354,21 @@ def thumbnail(title: str, photo: Path, dst: Path):
     d.text((96, 126), a, font=fl, fill=NAVY)
     d.text((96 + d.textlength(a, font=fl), 126), b, font=fl, fill=AMBER)
     d.line((60, 250, W - 60, 250), fill=(200, 200, 205), width=2)
-    words = re.sub(r"^\[[^\]]+\]\s*", "", title).replace(",", "").split()
+    # 쉼표에서 먼저 줄을 나눈다 (2026-10-30: '먼작귀 치이카와, 어른들이 줄 서는 이유'가 '줄 / 서는'에서 끊겼다)
+    parts = [p.split() for p in re.sub(r"^\[[^\]]+\]\s*", "", title).split(",") if p.strip()]
     size = 84
     while True:  # 세 줄 안에 들어가는 가장 큰 글자
         f = ImageFont.truetype(str(FONT_XB), size)
-        lines, cur = [], ""
-        for w in words:
-            if d.textlength(f"{cur} {w}".strip(), font=f) <= W - 130:
-                cur = f"{cur} {w}".strip()
-            else:
-                lines.append(cur)
-                cur = w
-        lines.append(cur)
+        lines = []
+        for words in parts:
+            cur = ""
+            for w in words:
+                if d.textlength(f"{cur} {w}".strip(), font=f) <= W - 130:
+                    cur = f"{cur} {w}".strip()
+                else:
+                    lines.append(cur)
+                    cur = w
+            lines.append(cur)
         if len(lines) <= 3 or size <= 56:
             break
         size -= 6
