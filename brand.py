@@ -107,6 +107,11 @@ def history() -> list:
         return []
 
 
+def sunny_ok() -> bool:
+    """써니는 다섯 편에 한 번 정도만 (2026-11-02 사용자). 최근 4편에 나왔으면 이번엔 금지."""
+    return not any(h.get("sunny", True) for h in history()[-4:])
+
+
 PICK = """역삼동이선생 네이버 블로그 [브랜드시선] 소재를 고른다. 오늘은 {today}.
 [브랜드시선이란] 브랜드 방문·뉴스·시즌 이슈를 훅으로, 마케터의 눈으로 그 브랜드 전략의 의외성을 푸는 에세이.
 가장 좋은 소재는 **역설**이 있는 것: 인지↑·구매↓, 한국에선 식었는데 외국인에겐 지금, 이름은 '월드'인데 미국 리그,
@@ -126,6 +131,7 @@ PICK = """역삼동이선생 네이버 블로그 [브랜드시선] 소재를 고
 [글 형태] 아래 중 하나를 고른다. 최근에 쓴 형태({recent_forms})는 피한다.
 {forms}
 
+hook 의 인물은 동료·후배·혼자 본 장면 위주로 하고, 딸 써니는 넣지 않는다.
 후보 8개를 좋은 순서로 낸다. 후보끼리도 형태를 섞는다. keyword 는 네이버에서 사람들이 실제로 검색할 말(공백 없이, 예: 마뗑킴, 뉴에라월드시리즈).
 JSON 하나만 출력: {{"candidates":[{{"brand":"","keyword":"","form":"형태 이름","angle":"역설 한 줄","hook":"이선생 도입 장면 한 줄","source":"뉴스|시즌|관찰"}}]}}"""
 
@@ -183,6 +189,7 @@ WRITE = """역삼동이선생 네이버 블로그 [브랜드시선] 글을 쓴�
 
 ## 쓰는 법
 - 평어체. 도입부 이선생 장면은 자유롭게 만들어도 되지만, 브랜드에 대한 사실은 확인한 것만.
+- {sunny}
 - 만든 장면도 확인한 사실과 어긋나면 안 된다: 개점·출시일 전에 그 매장에 갔다거나, 팝업 기간이 아닌 날 다녀왔다고 쓰지 않는다.
   ("지난주 토요일 2호점 줄" ← 2호점이 어제 열었다면 틀린 장면)
 - 본문은 줄글. 소제목 줄은 맨 앞에 "## ". 사진 자리는 한 줄에 [사진1] 처럼 (6~8자리, 훅 직후 첫 사진).
@@ -209,8 +216,11 @@ def _text_and_json(resp) -> str:
 def write_post(client, model, topic: dict, related: str) -> dict:
     spec = (ROOT / "brand_spec.md").read_text(encoding="utf-8").split("## 7.")[0]
     import cliche
+    allow = sunny_ok()
+    sunny = ("딸 써니는 꼭 필요할 때만 한 장면 (없어도 되면 빼고 동료·혼자 본 장면으로)." if allow else
+             "이번 글엔 딸 써니를 등장시키지 않는다. 장면은 회사 동료·후배, 혼자 본 매장·광고·뉴스로 만든다.")
     prompt = WRITE.format(today=datetime.now().strftime("%Y-%m-%d"), spec=spec, related=related or "(없으면 생략)",
-                          examples=(DATA / "brand_examples.md").read_text(encoding="utf-8"),
+                          examples=(DATA / "brand_examples.md").read_text(encoding="utf-8"), sunny=sunny,
                           cliche=cliche.RULE, **{k: topic.get(k, "") for k in ("brand", "angle", "hook", "keyword", "form", "note")})
     tools = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 12},
              {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 10}]
@@ -223,7 +233,15 @@ def write_post(client, model, topic: dict, related: str) -> dict:
         messages = [messages[0], {"role": "assistant", "content": resp.content}]
     text = _text_and_json(resp)
     post = json.loads(text[text.index("{"): text.rindex("}") + 1])
+    if not allow and "써니" in post.get("body", ""):
+        log("  써니 등장 → 동료 장면으로 고쳐 쓰기")
+        fix = client.messages.create(model=model, max_tokens=32000, messages=[{"role": "user", "content":
+            "아래 블로그 본문에서 딸 '써니'가 나오는 부분을 회사 동료·후배와의 장면이나 이선생 혼자 본 장면으로 바꿔라. "
+            "써니 말고는 한 글자도 고치지 말고, 사실·숫자·소제목·[사진N] 줄은 그대로 둔다. 고친 본문만 출력.\n\n"
+            + post["body"]}])
+        post["body"] = _text_and_json(fix).strip()
     cliche.scrub_fields(client, model, post, ("body",), "평어체")
+    post["sunny"] = "써니" in post.get("body", "")
     return post
 
 
@@ -567,7 +585,8 @@ def run(topic_text: str = None, local: Path = None, redo_photos: bool = False, a
         where = gdrive.save("이선생", day, folder, texts + files + clips
                             + [out / f"원본_{n}" for n in names.values() if n.endswith(".jpg")])
     if not redo_photos:
-        h = history() + [{"date": day, "brand": topic["brand"], "form": topic.get("form", ""), "title": title}]
+        h = history() + [{"date": day, "brand": topic["brand"], "form": topic.get("form", ""), "title": title,
+                             "sunny": post.get("sunny", "써니" in body)}]
         HISTORY.write_text(json.dumps(h, ensure_ascii=False, indent=1), encoding="utf-8")
     log(f"  저장: {where} (사진 {len(files) - (first is not None)}장 / 자리 {len(order)}개 / 클립 파일 {len(clips)}개)")
     return out
