@@ -365,13 +365,7 @@ def thumbnail(title: str, photo: Path, dst: Path):
         fd.line((0, y, W, y), fill=int(255 * y / 160))
     im.paste(ph, (0, top - 160), fade)
     d = ImageDraw.Draw(im)
-    fl = ImageFont.truetype(str(FONT_B), 34)
-    a, b = "역삼동이선생의 ", "브랜드시선"
-    tw = d.textlength(a + b, font=fl)
-    d.rounded_rectangle((60, 110, 60 + tw + 72, 110 + 72), radius=36, fill=(248, 246, 242))
-    d.text((96, 126), a, font=fl, fill=NAVY)
-    d.text((96 + d.textlength(a, font=fl), 126), b, font=fl, fill=AMBER)
-    d.line((60, 250, W - 60, 250), fill=(200, 200, 205), width=2)
+    # 2026-11-11 사용자: 썸네일엔 포스팅 제목만 — '역삼동이선생' 라벨·서명·63lee 주소 모두 빼기
     # 쉼표에서 먼저 줄을 나눈다 (2026-10-30: '먼작귀 치이카와, 어른들이 줄 서는 이유'가 '줄 / 서는'에서 끊겼다)
     parts = [p.split() for p in re.sub(r"^\[[^\]]+\]\s*", "", title).split(",") if p.strip()]
     size = 84
@@ -390,7 +384,7 @@ def thumbnail(title: str, photo: Path, dst: Path):
         if len(lines) <= 3 or size <= 56:
             break
         size -= 6
-    y = 300
+    y = 200
     for k, ln in enumerate(lines[:3]):
         d.text((60, y), ln, font=f, fill=AMBER if k == len(lines[:3]) - 1 else (255, 255, 255))
         y += int(size * 1.32)

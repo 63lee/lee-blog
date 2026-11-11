@@ -94,10 +94,7 @@ def make_thumbnail(title: str, out_path: Path, label: str = "역삼동이선생�
     img = Image.new("RGB", (THUMB_W, THUMB_H), BG)
     d = ImageDraw.Draw(img)
 
-    # 위쪽 라벨
-    f_label = _font(FONT_BOLD, 38)
-    d.rectangle([80, 230, 88, 290], fill=ACCENT)
-    d.text((112, 236), label, font=f_label, fill=ACCENT)
+    # 2026-11-11 사용자: 썸네일엔 포스팅 제목만 — '역삼동이선생' 라벨·서명·63lee 주소 모두 빼기
 
     # 제목: 쉼표·대시 기준으로 나눈 뒤 폭에 맞춰 줄바꿈, 최대 5줄
     parts = [p.strip() for p in title.replace("—", ",").split(",") if p.strip()] or [title]
@@ -123,9 +120,6 @@ def make_thumbnail(title: str, out_path: Path, label: str = "역삼동이선생�
         d.text((90, y), line, font=font, fill=FG)
         y += int(size * 1.35)
 
-    d.line([90, THUMB_H - 190, THUMB_W - 90, THUMB_H - 190], fill=ACCENT, width=2)
-    d.text((90, THUMB_H - 160), "역삼동이선생", font=_font(FONT_BOLD, 40), fill=FG)
-    d.text((90, THUMB_H - 105), "63lee.blogspot.com", font=_font(FONT_REG, 30), fill=ACCENT)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     img.save(out_path, "PNG", optimize=True)
@@ -244,21 +238,9 @@ def _photo_thumbnail(title: str, out_path: Path, photo: Path) -> Path:
     mask.putdata(col)
     img = Image.composite(Image.new("RGB", img.size, (12, 18, 30)), img, mask.resize(img.size))
 
+    # 2026-11-11 사용자: 썸네일엔 포스팅 제목만 — '역삼동이선생' 라벨·서명·63lee 주소 모두 빼기
     d = ImageDraw.Draw(img)
-    f_label = _font(FONT_BOLD, 38)
-    a, b = "역삼동이선생의", "슬기로운 직장생활"
-    tw = d.textlength(f"{a} {b}", font=f_label)
-    box = (60, 210, 60 + tw + 88, 210 + 82)
-    pill = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    ImageDraw.Draw(pill).rounded_rectangle(box, radius=41, fill=(250, 248, 244, 235))
-    img = Image.alpha_composite(img.convert("RGBA"), pill).convert("RGB")
-    d = ImageDraw.Draw(img)
-    d.text((box[0] + 44, box[1] + 18), a, font=f_label, fill=(23, 32, 47))
-    d.text((box[0] + 44 + d.textlength(a + " ", font=f_label), box[1] + 18), b, font=f_label, fill=ACCENT)
-
-    line_y = box[3] + 52
-    d.line((60, line_y, THUMB_W - 60, line_y), fill=(255, 255, 255), width=3)
-
+    line_y = 200
     size = 92
     while True:
         font = _font(FONT_BOLD, size)
@@ -275,8 +257,6 @@ def _photo_thumbnail(title: str, out_path: Path, photo: Path) -> Path:
         d.text((60, y), ln, font=font, fill=(255, 255, 255))
         y += int(size * 1.3)
 
-    d.text((60, THUMB_H - 128), "역삼동이선생", font=_font(FONT_BOLD, 38), fill=(255, 255, 255))
-    d.text((60, THUMB_H - 76), "63lee.blogspot.com", font=_font(FONT_REG, 28), fill=ACCENT)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     img.save(out_path.with_suffix(".jpg"), "JPEG", quality=86, optimize=True, progressive=True)
     return out_path.with_suffix(".jpg")
