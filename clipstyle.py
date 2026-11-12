@@ -330,8 +330,10 @@ def build(job: dict, out: Path, client=None, model=None, photo_dir: Path = None,
                 photos = match_photos(client, model, job, photos)
         else:
             photos = scene_photos(client, model, job, out / "photos")
-        total = photo_clip.render(job, photos, video, fit=bool(photo_dir),
-                                  credits=[credit_of.get(Path(p).name, "") for p in photos])
+        credits = [credit_of.get(Path(p).name, "") for p in photos]
+        # C 방식(2026-11-11): AI 이선생·써니 세로 컷은 화면 가득, 공식·직접 찍은 사진은 자르지 않고 통째로
+        fits = [bool(photo_dir) and not photo_clip.is_persona(p, c) for p, c in zip(photos, credits)]
+        total = photo_clip.render(job, photos, video, fit=fits, credits=credits)
         cover_t = photo_clip.scene_dur(job, job["scenes"][0]) - 0.2
     # 표지: 첫 장면 글자가 다 나온 순간
     subprocess.run([FF, "-hide_banner", "-loglevel", "error", "-y", "-ss", f"{max(cover_t, 0.5):.2f}",

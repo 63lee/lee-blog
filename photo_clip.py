@@ -266,9 +266,21 @@ def scene_dur(job, sc):
     return min(max(1.4 + n / 9, 3.0), 4.6)
 
 
-def render(job, photos: list, out: Path, fit: bool = False, credits: list = None) -> float:
+def is_persona(path, credit="") -> bool:
+    """2026-11-11 사용자 'C로 기본 바꿔': AI 로 만든 이선생·써니 사진(세로 컷)은 화면 가득.
+    공식·직접 찍은 사진은 지금처럼 자르지 않는다. 파일 이름에 이선생/써니가 있거나 출처가 AI 이고, 세로(9:16 가까이)일 때만."""
+    name = Path(path).name
+    if not (("이선생" in name or "써니" in name) or credit.strip().upper() == "AI"):
+        return False
+    with Image.open(path) as im:
+        return im.height / im.width >= 1.5
+
+
+def render(job, photos: list, out: Path, fit=False, credits: list = None) -> float:
     """photos: 장면마다 사진 경로 (모자라면 돌려 쓴다).
-    fit=True 면 사진을 자르지 않고 어두운 바탕 가운데에 통째로 놓는다. credits: 사진마다 ⓒ 출처 이름."""
+    fit=True 면 사진을 자르지 않고 어두운 바탕 가운데에 통째로 놓는다. 사진마다 다르게 하려면 bool 목록.
+    credits: 사진마다 ⓒ 출처 이름."""
+    fits = list(fit) if isinstance(fit, (list, tuple)) else [bool(fit)] * len(photos)
     acc = ACCENTS.get(job.get("accent", "lime"), ACCENTS["lime"])
     style = job["style"]
     top_shade = gradient(0, 760, 170, 0) if style == "hook" else gradient(0, 420, 120, 0)
@@ -284,6 +296,7 @@ def render(job, photos: list, out: Path, fit: bool = False, credits: list = None
     for i, sc in enumerate(job["scenes"]):
         photo = photos[i % len(photos)]
         credit = (credits or [""] * len(photos))[i % len(photos)]
+        fit = fits[i % len(photos)]
         box = FIT_BOX.get(style, FIT_BOX["hook"])
         bg = fit_base(photo, box) if fit else prep(photo)
         if style == "hook":
@@ -310,7 +323,7 @@ def render(job, photos: list, out: Path, fit: bool = False, credits: list = None
     # 끝 화면
     first = Image.open(photos[0]).convert("RGB")
     base, lay = (hook_end if style == "hook" else place_end)(job, first, acc)
-    if fit:  # 끝 화면도 흐린 사진 대신 같은 어두운 바탕
+    if fits[0]:  # 첫 사진을 자르지 않은 클립은 끝 화면도 흐린 사진 대신 어두운 바탕
         base = Image.new("RGBA", (W, H), FIT_BG + (255,))
     n = round(4.2 * FPS)
     for k in range(n):
