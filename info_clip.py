@@ -285,6 +285,12 @@ def s_end(img, d, sc, t):
 
 def s_photo(img, d, sc, t):
     """원본 사진 한 장을 자르지 않고 통째로 (2026-10-29 사용자: 원본 이미지로, 자르지 말고)."""
+    if sc.get("full"):  # 2026-11-13 사용자: 이선생 클립은 사진을 화면 가득
+        if "_im" not in sc:
+            from PIL import ImageOps
+            sc["_im"] = ImageOps.fit(Image.open(sc["src"]).convert("RGB"), (W, H), Image.LANCZOS).convert("RGBA")
+        appear(img, sc["_im"], t, 0.0, dy=0)
+        return
     if "_im" not in sc:
         im = Image.open(sc["src"]).convert("RGB")
         bw, bh = X1 - X0 + 60, 1180

@@ -223,14 +223,15 @@ def _persona_pick(draft: dict, title: str, n: int, exclude=()) -> list:
         return []
 
 
-def save_naver_version(draft: dict, url: str) -> None:
-    """네이버 블로그용으로 다시 쓴 원고와 사진을 구글 드라이브에 저장한다. 실패해도 발행에는 영향 없음."""
+def save_naver_version(draft: dict, url: str) -> str:
+    """네이버 블로그용으로 다시 쓴 원고와 사진을 구글 드라이브에 저장하고 그 제목을 돌려준다.
+    실패하면 빈 문자열. 실패해도 발행에는 영향 없음."""
     import naver
     import gdrive
     if not gdrive.enabled():
         # 2026-10-17: 조용히 건너뛰어서 네이버용 원고가 안 생긴 걸 몰랐다. 반드시 로그를 남긴다.
         log("  [경고] 네이버용 원고 건너뜀: 드라이브 권한(GDRIVE_* / token_drive.json) 없음")
-        return
+        return ""
     try:
         from anthropic import Anthropic
         from writer import MODEL
@@ -259,47 +260,52 @@ def save_naver_version(draft: dict, url: str) -> None:
         files = naver.package(post, photos, out)
         where = gdrive.save("이선생", datetime.now().strftime("%Y-%m-%d"), post["title"], files)
         log(f"  네이버용 원고 저장: 구글 드라이브/{where}")
+        return post["title"]
     except Exception as exc:
         log(f"  [경고] 네이버용 원고 저장 실패 ({type(exc).__name__}: {exc})")
         persona_photos.mark(draft.get("_persona", []))
+        return ""
 
 
-def save_clip(draft: dict) -> bool:
-    """글로 네이버 클립·인스타 릴스 영상(9:16)을 만들어 드라이브 '[클립] 제목' 폴더에 저장한다 (2026-10-20).
-    2026-10-29: 글에 맞춰 정보형·후킹 리스트형·현장형 중 하나로, 내레이션 없이 만든다 (clipstyle.py).
-    영상·표지·캡션 2개가 들어간다. 대본 JSON 은 posts/ 에 남긴다. 실패해도 발행에는 영향 없음."""
+def save_clips(draft: dict, folder_title: str = "") -> None:
+    """글로 네이버 클립·인스타 릴스 영상(9:16)을 만들어 드라이브의 네이버용 원고 폴더에 함께 저장한다 (2026-10-20).
+    2026-10-29: 내레이션 없이 만든다 (clipstyle.py).
+    2026-11-05: 브랜드시선과 같이 글 1편에 정보형·후킹형 1편씩, '[클립] 제목' 폴더 대신 원고 폴더에 넣는다.
+    클립마다 영상·표지·캡션 2개가 들어간다. 대본 JSON 은 posts/ 에 남긴다.
+    하나가 실패해도 다른 하나는 그대로 만들고, 발행에도 영향 없음."""
     import gdrive
     if os.environ.get("CLIP_MODE", "drive") == "off":
-        return False
+        return
     if not gdrive.enabled():
         log("  [경고] 클립 건너뜀: 드라이브 권한 없음")
-        return False
-    try:
-        import json
-        import tempfile
-        from anthropic import Anthropic
-        import clipstyle
-        from writer import MODEL
-        client = Anthropic()
-        title = draft["titles"][0]
-        job = clipstyle.make_job(client, MODEL, title, draft["body_html"])
-        # 영상 작업 파일(장면 사진 등)은 저장소에 올리지 않도록 임시 폴더에서 만든다
-        out = Path(tempfile.mkdtemp()) / "out"
-        img_dir = Path(draft["_img_dir"])
-        video = clipstyle.build(job, out, client, MODEL, backdrop=img_dir / "photo1.jpg")
-        (img_dir.parent / (img_dir.name.replace("-images", "") + "-clip.json")).write_text(
-            json.dumps(job, ensure_ascii=False, indent=2), encoding="utf-8")
-        final = video.with_name(f"{title[:40]}_클립.mp4".replace("/", " "))
-        video.rename(final)
-        files = [p for p in (final, out / "cover.jpg", out / "caption_naver.txt", out / "caption_instagram.txt")
-                 if p.exists()]
-        where = gdrive.save("이선생", datetime.now().strftime("%Y-%m-%d"), f"[클립] {title}", files)
-        log(f"  클립 저장: 구글 드라이브/{where} ({job['style']})")
-        return True
-    except Exception as exc:
-        log(f"  [경고] 클립 만들기 실패 ({type(exc).__name__}: {exc})")
-        traceback.print_exc()
-        return False
+        return
+    import json
+    import tempfile
+    from anthropic import Anthropic
+    import clipstyle
+    from writer import MODEL
+    client = Anthropic()
+    title = draft["titles"][0]
+    img_dir = Path(draft["_img_dir"])
+    for style, label in (("info", "정보형"), ("hook", "후킹형")):
+        try:
+            job = clipstyle.make_job(client, MODEL, title, draft["body_html"], style)
+            # 영상 작업 파일(장면 사진 등)은 저장소에 올리지 않도록 임시 폴더에서 만든다
+            out = Path(tempfile.mkdtemp()) / "out"
+            video = clipstyle.build(job, out, client, MODEL, backdrop=img_dir / "photo1.jpg", remember=False)
+            (img_dir.parent / (img_dir.name.replace("-images", "") + f"-clip-{style}.json")).write_text(
+                json.dumps(job, ensure_ascii=False, indent=2), encoding="utf-8")
+            # 이름은 브랜드시선 클립과 맞춘다 (brand.make_clips)
+            pairs = [(video, f"클립_{label}.mp4"), (out / "cover.jpg", f"클립_{label}_표지.jpg"),
+                     (out / "caption_naver.txt", f"클립_{label}_caption_naver.txt"),
+                     (out / "caption_instagram.txt", f"클립_{label}_caption_instagram.txt")]
+            files = [src.rename(src.with_name(dst)) for src, dst in pairs if src.exists()]
+            # 원고 저장에 실패했으면 글 제목으로 폴더를 만든다
+            where = gdrive.save("이선생", datetime.now().strftime("%Y-%m-%d"), folder_title or title, files)
+            log(f"  클립 저장: 구글 드라이브/{where} ({label})")
+        except Exception as exc:
+            log(f"  [경고] 클립 {label} 실패 ({type(exc).__name__}: {exc})")
+            traceback.print_exc()
 
 
 def main() -> int:
@@ -314,7 +320,6 @@ def main() -> int:
 
     upload = "--no-upload" not in sys.argv
     failures = 0
-    clips_made = 0
 
     for i, topic in enumerate(topics, 1):
         log(f"[{i}/{len(topics)}] {topic['track']} / {topic['keyword']}")
@@ -349,10 +354,8 @@ def main() -> int:
                 mailer.send(title, body)
                 url = mailer.wait_published(title)
                 log(f"  메일로 게시: {url or '발송 완료 (피드 반영 대기 중)'}")
-                save_naver_version(draft, url)
-                # 클립은 하루 CLIPS_PER_DAY 편(기본 1편)만 만든다
-                if clips_made < int(os.environ.get("CLIPS_PER_DAY", "1")) and save_clip(draft):
-                    clips_made += 1
+                # 글 1편마다 클립 2편(정보형·후킹형)을 만들어 원고와 같은 폴더에 넣는다
+                save_clips(draft, save_naver_version(draft, url))
                 continue
             post = create_draft(title, body, draft.get("labels", []))
             log(f"  Blogger 초안 등록: {post.get('url') or post.get('id')}")
