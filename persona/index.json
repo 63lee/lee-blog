@@ -1,0 +1,137 @@
+[
+ {
+  "file": "lee_00.jpg",
+  "kind": "face",
+  "scene": "사무실 자리 옆에 서서 휴대폰으로 메시지에 답하는 모습, 가죽 재킷과 큰 가방, 퇴근 무렵"
+ },
+ {
+  "file": "lee_01.jpg",
+  "kind": "face",
+  "scene": "사무실 책상에서 후배와 마주 앉아 손짓하며 대안을 설명하는 모습"
+ },
+ {
+  "file": "lee_02.jpg",
+  "kind": "face",
+  "scene": "저녁 식당·회식 자리에서 휴대폰 메시지를 읽으며 미소 짓는 모습, 음식과 술잔"
+ },
+ {
+  "file": "lee_03.jpg",
+  "kind": "face",
+  "scene": "사무실 책상에서 플래너에 월요일 일정을 적는 모습, 블랙 터틀넥"
+ },
+ {
+  "file": "lee_04.jpg",
+  "kind": "face",
+  "scene": "사무실 자리에서 후배가 건네는 커피를 받으며 웃는 모습"
+ },
+ {
+  "file": "lee_05.jpg",
+  "kind": "face",
+  "scene": "사무실 자리에서 후배 말을 듣고 놀라 웃는 모습, 커피"
+ },
+ {
+  "file": "lee_06.jpg",
+  "kind": "back",
+  "scene": "월요일 아침 사무실 통로를 걸어 출근하는 뒷모습"
+ },
+ {
+  "file": "lee_07.jpg",
+  "kind": "hand",
+  "scene": "휴대폰으로 메신저 답장을 타이핑하는 손, 노트북 옆"
+ },
+ {
+  "file": "lee_08.jpg",
+  "kind": "hand",
+  "scene": "노트에 우선순위 표를 펜으로 정리하는 손, 커피와 포스트잇"
+ },
+ {
+  "file": "lee_09.jpg",
+  "kind": "back",
+  "scene": "엘리베이터 앞에 서 있는 후배의 뒷모습, 퇴근 무렵 복도"
+ },
+ {
+  "file": "lee_10.jpg",
+  "kind": "hand",
+  "scene": "보고서 두 장과 포스트잇을 펜으로 짚는 손, 커피"
+ },
+ {
+  "file": "lee_11.jpg",
+  "kind": "face",
+  "scene": "해 질 녘 사무실 창가 자리에서 생각에 잠긴 옆모습"
+ },
+ {
+  "file": "lee_12.jpg",
+  "kind": "hand",
+  "scene": "책상 위 커피 두 잔을 건네는 손, 노트와 펜, 노을"
+ },
+ {
+  "file": "lee_13.jpg",
+  "kind": "back",
+  "scene": "퇴근길 사무실 복도를 커피 들고 걸어가는 뒷모습"
+ },
+ {
+  "file": "lee_14.jpg",
+  "kind": "hand",
+  "scene": "휴대폰으로 쇼핑 앱 화면을 넘기는 손, 노트북과 커피"
+ },
+ {
+  "file": "lee_15.jpg",
+  "kind": "back",
+  "scene": "밤에 집 책상에서 노트북으로 일하는 뒷모습, 스탠드 조명"
+ },
+ {
+  "file": "lee_16.jpg",
+  "kind": "face",
+  "scene": "카페 옆에서 휴대폰을 보며 서 있는 모습, 카키 재킷"
+ },
+ {
+  "file": "lee_17.jpg",
+  "kind": "back",
+  "scene": "카페 창가에서 노트북으로 일하는 옆뒷모습"
+ },
+ {
+  "file": "lee_18.jpg",
+  "kind": "face",
+  "scene": "회의실 화이트보드 앞에서 포스트잇을 가리키며 설명하는 모습"
+ },
+ {
+  "file": "lee_19.jpg",
+  "kind": "face",
+  "scene": "겨울 아침 출근길 거리를 커피 들고 걷는 모습, 롱코트와 목도리"
+ },
+ {
+  "file": "lee_20.jpg",
+  "kind": "face",
+  "scene": "오피스 빌딩 로비를 서류철 들고 걸어가는 모습, 블랙 정장"
+ },
+ {
+  "file": "lee_21.jpg",
+  "kind": "hand",
+  "scene": "카페에서 노트북 타이핑하는 손과 아이스 라떼, 얼굴 일부"
+ },
+ {
+  "file": "lee_22.jpg",
+  "kind": "face",
+  "scene": "저녁 집 창가에 기대 머그컵을 든 편안한 모습, 니트"
+ },
+ {
+  "file": "lee_23.jpg",
+  "kind": "face",
+  "scene": "출근길 거리를 커피 들고 걷는 모습, 가죽 셔츠재킷과 데님"
+ },
+ {
+  "file": "lee_24.jpg",
+  "kind": "face",
+  "scene": "횡단보도를 건너 출근하는 모습, 블랙 코트와 크림 카고"
+ },
+ {
+  "file": "lee_25.jpg",
+  "kind": "face",
+  "scene": "흰 벽 앞에서 커피 들고 서 있는 모습, 카키 워크재킷"
+ },
+ {
+  "file": "lee_26.jpg",
+  "kind": "face",
+  "scene": "골목길을 걸어가는 모습, 올리브 트렌치와 스커트"
+ }
+]

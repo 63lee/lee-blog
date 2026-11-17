@@ -44,7 +44,8 @@ def _font(path: Path, size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.truetype(str(path), size)
 
 
-def make_quote_card(quote: str, out_path: Path, byline: str = "역삼동이선생") -> Path:
+def make_quote_card(quote: str, out_path: Path, byline: str = "") -> Path:
+    # 2026-11-17 사용자: "역삼동 이선생이라는 로고 쓰지마" — 카드 서명도 뺀다
     """핵심 문장 하나를 담은 인용 카드를 그린다."""
     img = Image.new("RGB", (CARD_W, CARD_H), BG)
     d = ImageDraw.Draw(img)
@@ -70,7 +71,8 @@ def make_quote_card(quote: str, out_path: Path, byline: str = "역삼동이선�
         d.text((130, y), line, font=font, fill=FG)
         y += line_h
 
-    d.text((130, CARD_H - 110), byline, font=_font(FONT_REG, 26), fill=ACCENT)
+    if byline:
+        d.text((130, CARD_H - 110), byline, font=_font(FONT_REG, 26), fill=ACCENT)
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
     img.save(out_path, "PNG")
@@ -80,7 +82,7 @@ def make_quote_card(quote: str, out_path: Path, byline: str = "역삼동이선�
 THUMB_W, THUMB_H = 1080, 1350  # 모바일 세로 썸네일 (4:5)
 
 
-def make_thumbnail(title: str, out_path: Path, label: str = "역삼동이선생의 슬기로운 직장생활",
+def make_thumbnail(title: str, out_path: Path, label: str = "",
                    photo: Path | None = None) -> Path:
     """글 맨 위에 들어갈 모바일 세로 썸네일. Blogger 는 첫 이미지를 목록 썸네일로 쓴다.
 

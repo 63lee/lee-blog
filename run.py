@@ -22,6 +22,7 @@ from images import build_images  # noqa: E402
 from writer import write_draft  # noqa: E402
 import hosting  # noqa: E402
 import mailer  # noqa: E402
+import persona_photos  # noqa: E402
 from images import make_thumbnail  # noqa: E402
 
 LOG_PATH = BASE / "data" / "run.log"
@@ -176,13 +177,16 @@ def with_images(draft: dict) -> str:
     body = draft["body_html"]
     imgs = draft.get("_imgs") or {"cards": [], "stock": None}
     title = draft["titles"][0]
-    # Pixabay 사진이 있으면 사진 배경 썸네일, 없으면 남색 글자 썸네일
-    hero_photo = imgs["stock"]["path"] if imgs.get("stock") else None
+    # 2026-11-17: 썸네일 배경은 이선생 사진(persona/). 없으면 Pixabay 사진, 그것도 없으면 남색 글자 썸네일.
+    lee = _persona_pick(draft, title, 1)
+    draft["_persona"] = [p.name for p in lee]
+    stock = imgs["stock"]["path"] if imgs.get("stock") else None
+    hero_photo = lee[0] if lee else stock
     thumb = make_thumbnail(title, draft["_img_dir"] / "thumb.png", photo=hero_photo)
     draft["_thumb"] = thumb
-    extra = imgs.get("photos", [])
-    files = ([thumb] + list(imgs["cards"]) + ([imgs["stock"]["path"]] if imgs["stock"] else [])
-             + [p["path"] for p in extra])
+    # 이선생 사진을 썸네일에 썼으면 Pixabay 첫 사진을 본문 중간에 넣는다
+    extra = ([imgs["stock"]] if lee and stock else []) + imgs.get("photos", [])
+    files = [thumb] + list(imgs["cards"]) + [p["path"] for p in extra]
     urls = hosting.publish(files, f"images: {title[:40]}")
 
     # 도입부 사진은 이미 썸네일 배경으로 썼으므로 본문에 다시 넣지 않는다
@@ -205,7 +209,18 @@ def with_images(draft: dict) -> str:
     for card in imgs["cards"][len(spots):]:
         body += _img(urls[card], "핵심 문장 카드")
 
-    return _img(urls[thumb], title) + body
+    return _img(urls[thumb], title, persona_photos.CAPTION if lee else "") + body
+
+
+def _persona_pick(draft: dict, title: str, n: int, exclude=()) -> list:
+    try:
+        from anthropic import Anthropic
+        from writer import MODEL
+        summary = re.sub(r"<[^>]+>", " ", draft.get("body_html", ""))[:600]
+        return persona_photos.pick(Anthropic(), MODEL, title, summary, n, exclude)
+    except Exception as exc:
+        log(f"  [경고] 이선생 사진 못 고름 ({type(exc).__name__}: {exc})")
+        return []
 
 
 def save_naver_version(draft: dict, url: str) -> None:
@@ -219,12 +234,12 @@ def save_naver_version(draft: dict, url: str) -> None:
     try:
         from anthropic import Anthropic
         from writer import MODEL
-        imgs = draft.get("_imgs") or {}
-        photos = ([draft["_thumb"]] if draft.get("_thumb") else [])
-        photos += ([imgs["stock"]["path"]] if imgs.get("stock") else [])
-        photos += [p["path"] for p in imgs.get("photos", [])] + list(imgs.get("cards", []))
+        # 2026-11-17 네이버 유사문서 대응: 구글 글의 썸네일·Pixabay 사진·인용 카드를 다시 쓰지 않는다.
+        # 구글 글에 안 쓴 이선생 사진 3장(1장은 네이버 제목으로 썸네일)만 쓴다.
+        lee = _persona_pick(draft, draft["titles"][0], 3, exclude=draft.get("_persona", []))
+        n_photos = len(lee) or 1
         post = naver.write(Anthropic(), MODEL, draft["titles"][0], draft.get("_search_keyword", ""),
-                           url, draft["body_html"], len(photos),
+                           url, draft["body_html"], n_photos,
                            extra="\n".join([
                                "- 글쓴이는 회사 생활을 오래 한 직장 선배 '역삼동이선생'. '25년' 같은 경력 연수는 쓰지 않는다. **평어체**(~다, ~한다)로 쓴다. 존댓말 금지.",
                                "- 이선생은 **여성**이고 딸 써니가 있다. 후배는 '선배'라고 부른다('형'·'오빠' 금지). 딸 써니는 **스무 살 대학생**이다. 아이·어린이·초등학생처럼 묘사하지 않는다(손을 잡고 다닌다, 장난감 코너, 데리고 다닌다, 워킹맘 육아 같은 표현 금지). 써니는 자주 등장시키지 않는다.",
@@ -234,11 +249,19 @@ def save_naver_version(draft: dict, url: str) -> None:
                                "- 원문 링크는 '더 자세한 정리는 여기'처럼 가볍게 한 번만.",
                            ]))
         out = Path(draft["_img_dir"]).parent / (Path(draft["_img_dir"]).name + "-naver")
+        photos = []
+        if lee:
+            photos.append(make_thumbnail(post["title"], out.parent / (out.name + "-thumb.png"), photo=lee[0]))
+            photos += lee[1:]
+            persona_photos.mark(draft.get("_persona", []) + [p.name for p in lee])
+        elif draft.get("_persona"):
+            persona_photos.mark(draft["_persona"])
         files = naver.package(post, photos, out)
         where = gdrive.save("이선생", datetime.now().strftime("%Y-%m-%d"), post["title"], files)
         log(f"  네이버용 원고 저장: 구글 드라이브/{where}")
     except Exception as exc:
         log(f"  [경고] 네이버용 원고 저장 실패 ({type(exc).__name__}: {exc})")
+        persona_photos.mark(draft.get("_persona", []))
 
 
 def save_clip(draft: dict) -> bool:
