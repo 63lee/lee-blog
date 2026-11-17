@@ -177,9 +177,11 @@ WRITE = """역삼동이선생 네이버 블로그 [브랜드시선] 글을 쓴�
 
 먼저 web_search·web_fetch 로 사실을 모은다: 공식 홈페이지 → 공식 뉴스룸·보도자료 → 주요 언론 순.
 숫자(매출·비중·가격·연도·기간), 매장 주소·운영시간, 팝업 기간은 출처를 확인한 것만 쓴다.
-사진에 쓸 이미지가 있는 페이지도 찾아 둔다: 공식 홈페이지 브랜드·매장·제품 페이지, 공식 뉴스룸·보도자료,
-그리고 사진 설명에 "사진=브랜드(회사)"로 표기된 **회사 제공 보도사진**이 실린 기사. 5곳 이상.
-기자가 직접 찍은 사진·개인 블로그·인스타는 넣지 않는다.
+사진에 쓸 이미지가 있는 페이지도 최대한 많이 찾아 둔다 (공개된 이미지는 최대한 쓴다는 지시):
+공식 홈페이지의 캠페인·룩북·**화보** 페이지와 브랜드·매장·제품 페이지, 공식 뉴스룸·보도자료,
+공식 SNS 에 게시된 캠페인 컷, 그리고 사진 설명에 "사진=브랜드(회사)"로 표기된 **회사 제공 보도사진**이 실린 기사,
+기사에 실린 공개 이미지. 8곳 이상, 화보·제품·매장 컷이 섞이게.
+개인 블로그·개인 인스타 사진은 넣지 않는다. name 은 ⓒ 뒤에 쓸 출처(브랜드 공식·언론사·회사 제공)를 정확히.
 
 ## 기준 (반드시 지킨다)
 {spec}
@@ -263,12 +265,12 @@ def page_images(url: str) -> list:
     return list(dict.fromkeys(out))
 
 
-def collect_photos(pages: list, work: Path, limit=24) -> list:
+def collect_photos(pages: list, work: Path, limit=36) -> list:
     """[{path, name, url}] — 600px 이상인 사진만."""
     work.mkdir(parents=True, exist_ok=True)
     got, keys = [], []
     for p in pages:
-        for u in page_images(p["url"])[:20]:
+        for u in page_images(p["url"])[:30]:
             try:
                 im = Image.open(io.BytesIO(get(u)))
                 if im.mode in ("RGBA", "LA", "P"):  # 투명 배경 제품 컷은 검게 변하지 않게 밝은 바탕에 얹는다
