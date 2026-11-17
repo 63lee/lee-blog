@@ -81,7 +81,9 @@ def pick_trend_topics(used: set[str]) -> list[dict]:
 
 def pick_evergreen_topics(used: set[str], count: int) -> list[dict]:
     """아직 안 쓴 에버그린 주제를 슬기로운 직장생활 우선으로 뽑는다."""
-    pool = [(c, t) for c, t in EVERGREEN_TOPICS if t not in used]
+    from quality import is_duplicate
+    pool = [(c, t) for c, t in EVERGREEN_TOPICS
+            if t not in used and c != "brand" and not is_duplicate(t, sorted(used))]
     if not pool:
         print("  [경고] 에버그린 주제 풀이 모두 소진됐습니다. niche.py에 추가하세요.")
         return []
@@ -91,10 +93,11 @@ def pick_evergreen_topics(used: set[str], count: int) -> list[dict]:
         print(f"  [주의] 남은 주제가 {len(pool)}개뿐입니다 (약 {len(pool) // 2}일치). "
               "niche.py의 EVERGREEN_TOPICS를 보충하세요.")
 
-    # 슬기로운 직장생활이 주축: office 3 : career 2 : brand 1 비중.
-    # 하루 2편씩만 뽑으므로, 지금까지 쓴 비율과 목표 비율의 차이가 가장 큰 쪽부터 채운다.
+    # 2026-11-17 애드센스 반려(가치 없는 콘텐츠) 대응: 블로그 주제를 직장생활·돈·노동법으로 좁힌다.
+    # 브랜드 분석은 네이버 브랜드시선(brand.py)에서만 쓴다. office 3 : career 2.
+    # 하루 1편씩만 뽑으므로, 지금까지 쓴 비율과 목표 비율의 차이가 가장 큰 쪽부터 채운다.
     # (단순히 순서대로 섞으면 매일 office 만 뽑히고 나머지는 영영 안 나온다)
-    share = {"office": 3, "career": 2, "brand": 1}
+    share = {"office": 3, "career": 2}
     cat_of = {t: c for c, t in EVERGREEN_TOPICS}
     done = {c: 0 for c in share}
     for entry in load_history()["used"]:
@@ -134,9 +137,12 @@ def pick_today(count: int) -> list[dict]:
     mark_used()로 따로 남긴다.
     """
     used = {entry["keyword"] for entry in load_history()["used"]}
+    # 실제 발행된 제목까지 합쳐 비교한다 (주제 문장과 제목이 달라 같은 글이 두 번 나왔다)
+    from quality import is_duplicate, published
+    used |= {p["title"] for p in published()}
     # 1순위: 오늘 실제로 많이 검색되는 직장인 주제 (자동완성·트렌드 + Claude 선정)
     from demand import pick as pick_demand
-    topics = pick_demand(used, count)
+    topics = [t for t in pick_demand(used, count) if not is_duplicate(t["keyword"], sorted(used))]
     # 모자라면 기존 주제 풀로 채운다
     if len(topics) < count:
         topics += pick_evergreen_topics(used, count - len(topics))

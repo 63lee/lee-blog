@@ -281,7 +281,7 @@ def save_clip(draft: dict) -> bool:
 
 def main() -> int:
     manual = topics_from_args(sys.argv)
-    count = len(manual) or int(os.environ.get("DRAFTS_PER_DAY", "2"))
+    count = len(manual) or int(os.environ.get("DRAFTS_PER_DAY", "1"))
     log(f"=== 시작 (초안 {count}개) ===")
 
     topics = manual or pick_today(count)
@@ -317,6 +317,9 @@ def main() -> int:
             title = draft["titles"][0]
             if mailer.enabled():
                 # 이 계정은 API 글쓰기가 막혀 있어 '이메일로 게시'로 올린다 (라벨 대신 태그 줄을 붙인다)
+                # 2026-11-17: 글끼리 이어지게 실제 발행된 관련 글 3개를 붙인다 (quality.py)
+                from quality import related_html
+                body += related_html(title)
                 tags = " ".join(f"#{t.replace(' ', '')}" for t in draft.get("labels", []))
                 if tags:
                     body += f'<p style="color:#8a8178;font-size:14px;">{tags}</p>'
