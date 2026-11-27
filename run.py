@@ -241,14 +241,7 @@ def save_naver_version(draft: dict, url: str) -> str:
         n_photos = len(lee) or 1
         post = naver.write(Anthropic(), MODEL, draft["titles"][0], draft.get("_search_keyword", ""),
                            url, draft["body_html"], n_photos,
-                           extra="\n".join([
-                               "- 글쓴이는 회사 생활을 오래 한 직장 선배 '역삼동이선생'. '25년' 같은 경력 연수는 쓰지 않는다. **평어체**(~다, ~한다)로 쓴다. 존댓말 금지.",
-                               "- 이선생은 **여성**이고 딸 써니가 있다. 후배는 '선배'라고 부른다('형'·'오빠' 금지). 딸 써니는 **스무 살 대학생**이다. 아이·어린이·초등학생처럼 묘사하지 않는다(손을 잡고 다닌다, 장난감 코너, 데리고 다닌다, 워킹맘 육아 같은 표현 금지). 써니는 자주 등장시키지 않는다.",
-                               "- 목적은 **인플루언서·팬 확보**다. 정보 정리보다 이선생 본인의 경험·감정·후배를 아끼는 "
-                               "시선이 보이게 쓴다. 첫 문단은 이선생의 구체적인 장면으로 시작한다.",
-                               "- 끝에 독자 경험을 묻는 댓글 질문 1개와 '이런 이야기가 도움이 됐다면 이웃 추가해 두세요' 같은 한 줄.",
-                               "- 원문 링크는 '더 자세한 정리는 여기'처럼 가볍게 한 번만.",
-                           ]))
+                           extra=naver.LEE_EXTRA)
         out = Path(draft["_img_dir"]).parent / (Path(draft["_img_dir"]).name + "-naver")
         photos = []
         if lee:
@@ -265,6 +258,19 @@ def save_naver_version(draft: dict, url: str) -> str:
         log(f"  [경고] 네이버용 원고 저장 실패 ({type(exc).__name__}: {exc})")
         persona_photos.mark(draft.get("_persona", []))
         return ""
+
+
+def save_office_draft() -> None:
+    """네이버 [슬기로운직장생활] 주제 후보 5개 + 1번 초안 (office.py). 실패해도 구글 발행에는 영향 없음."""
+    try:
+        import office
+        from anthropic import Anthropic
+        from writer import MODEL
+        where = office.auto(Anthropic(), MODEL)
+        log(f"  네이버 직장생활 초안 저장: {where}")
+    except Exception as exc:
+        log(f"  [경고] 네이버 직장생활 초안 실패 ({type(exc).__name__}: {exc})")
+        traceback.print_exc()
 
 
 def save_clips(draft: dict, folder_title: str = "") -> None:
@@ -354,8 +360,13 @@ def main() -> int:
                 mailer.send(title, body)
                 url = mailer.wait_published(title)
                 log(f"  메일로 게시: {url or '발송 완료 (피드 반영 대기 중)'}")
-                # 글 1편마다 클립 2편(정보형·후킹형)을 만들어 원고와 같은 폴더에 넣는다
-                save_clips(draft, save_naver_version(draft, url))
+                # 2026-11-27 사용자: 구글 글 주제를 네이버로 다시 쓰면 재미가 없다 → 네이버 직장생활 글은
+                # office.py 가 뉴스·검색어로 따로 소재를 찾아 초안까지만 쓴다 (사진·클립은 사용자 검사 뒤).
+                # 예전 방식(구글 글을 네이버용으로 다시 쓰고 클립까지)은 NAVER_MODE=rewrite.
+                if os.environ.get("NAVER_MODE", "office") == "rewrite":
+                    save_clips(draft, save_naver_version(draft, url))
+                else:
+                    save_office_draft()
                 continue
             post = create_draft(title, body, draft.get("labels", []))
             log(f"  Blogger 초안 등록: {post.get('url') or post.get('id')}")

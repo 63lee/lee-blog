@@ -11,6 +11,10 @@
 사용: python brand.py            (소재 자동)
       python brand.py "브랜드 소재"  (소재 지정)
       python brand.py --local 폴더   (드라이브 대신 로컬 폴더에 저장)
+      python brand.py --finish 폴더  (검사 끝난 초안으로 사진·썸네일·클립·최종 원고)
+
+2026-11-27 사용자: "초안까지 작성하고 나한테 검사받고 이미지 만드는 게 좋겠어"
+→ 자동 실행은 3)사진·클립 전에 멈추고 00_초안_검사용.txt 만 저장한다 (draft.py). BRAND_STAGE=full 이면 예전처럼 한 번에.
 """
 import base64
 import html
@@ -194,7 +198,7 @@ WRITE = """역삼동이선생 네이버 블로그 [브랜드시선] 글을 쓴�
 - {sunny}
 - 만든 장면도 확인한 사실과 어긋나면 안 된다: 개점·출시일 전에 그 매장에 갔다거나, 팝업 기간이 아닌 날 다녀왔다고 쓰지 않는다.
   ("지난주 토요일 2호점 줄" ← 2호점이 어제 열었다면 틀린 장면)
-- 본문은 줄글. 소제목 줄은 맨 앞에 "## ". 사진 자리는 한 줄에 [사진1] 처럼 (6~8자리, 훅 직후 첫 사진).
+- 본문은 한 줄에 한 문장 (문장마다 줄바꿈, 문단 사이는 빈 줄 하나). 소제목 줄은 맨 앞에 "## ". 사진 자리는 한 줄에 [사진1] 처럼 (6~8자리, 훅 직후 첫 사진).
 - 비교 표는 "구분 | 그때 | 지금" 처럼 | 로 나눈 줄들 (첫 줄이 머리줄).
 - 방문 정보(오픈·방문형일 때만)는 "방문 정보" 소제목 아래 "· 위치: …" 줄들.
 - 끝은 "Q. …" 한 줄, 그 다음 "※함께 읽으면 좋은 글" 아래 지난 글 제목 하나: {related}
@@ -218,12 +222,13 @@ def _text_and_json(resp) -> str:
 def write_post(client, model, topic: dict, related: str) -> dict:
     spec = (ROOT / "brand_spec.md").read_text(encoding="utf-8").split("## 7.")[0]
     import cliche
+    import style  # 2026-11-27 사용자 문체 규칙 (한 줄 한 문장, 감상·비유 정리 금지)
     allow = sunny_ok()
     sunny = ("딸 써니는 꼭 필요할 때만 한 장면 (없어도 되면 빼고 동료·혼자 본 장면으로)." if allow else
              "이번 글엔 딸 써니를 등장시키지 않는다. 장면은 회사 동료·후배, 혼자 본 매장·광고·뉴스로 만든다.")
     prompt = WRITE.format(today=datetime.now().strftime("%Y-%m-%d"), spec=spec, related=related or "(없으면 생략)",
                           examples=(DATA / "brand_examples.md").read_text(encoding="utf-8"), sunny=sunny,
-                          cliche=cliche.RULE, **{k: topic.get(k, "") for k in ("brand", "angle", "hook", "keyword", "form", "note")})
+                          cliche=cliche.RULE + "\n\n" + style.RULE, **{k: topic.get(k, "") for k in ("brand", "angle", "hook", "keyword", "form", "note")})
     tools = [{"type": "web_search_20260209", "name": "web_search", "max_uses": 12},
              {"type": "web_fetch_20260209", "name": "web_fetch", "max_uses": 10}]
     messages = [{"role": "user", "content": prompt}]
@@ -505,7 +510,7 @@ def to_text(post, body, captions, order_names) -> str:
 
 
 def run(topic_text: str = None, local: Path = None, redo_photos: bool = False, avoid=(), avoid_forms=(),
-        topic_opts: dict = None) -> Path:
+        topic_opts: dict = None, stage: str = None) -> Path:
     from anthropic import Anthropic
     from writer import MODEL
     client = Anthropic()
@@ -529,7 +534,59 @@ def run(topic_text: str = None, local: Path = None, redo_photos: bool = False, a
                               if not re.fullmatch(r"\s*(#\S+\s*){3,}", l)).rstrip()
     title = post["titles"][0]
     log(f"  원고: {title} ({len(post['body'])}자)")
+    # 2026-11-27 사용자: 초안까지만 쓰고 검사받은 뒤 이미지. BRAND_STAGE=full 이면 예전처럼 한 번에.
+    if not redo_photos and (stage or os.environ.get("BRAND_STAGE", "draft")) == "draft":
+        return save_draft(post, topic, local)
+    return build_assets(client, MODEL, post, topic, local=local, record=not redo_photos)
 
+
+def save_draft(post: dict, topic: dict, local: Path = None) -> Path:
+    """글만 원고 폴더에 저장한다 (00_초안_검사용.txt + _초안정보.json). 이미지는 검사 뒤 finish() 에서."""
+    import tempfile
+    import draft
+    title, day = post["titles"][0], datetime.now().strftime("%Y-%m-%d")
+    folder = f"[브랜드시선] {re.sub(r'^\[[^\]]+\]\s*', '', title)}"
+    work = Path(tempfile.mkdtemp())
+    notes = (["사진 자리 (이미지 단계에서 공식 사진을 찾아 넣는다)"]
+             + [f"- [사진{p['slot']}] {p.get('want', '')} / 캡션: {p.get('caption', '')}" for p in post.get("photos", [])]
+             + ["", "발행 전 확인"] + [f"- {c}" for c in post.get("checks", [])]
+             + ["", "확인한 출처"] + [f"- {s}" for s in post.get("sources", [])])
+    files = draft.write(work, title, post["titles"][1:], post["body"], post.get("hashtags", []), notes,
+                        {"series": "brand", **post, "_topic": topic})
+    if local:
+        import shutil
+        dst = local / f"{day} {''.join(c for c in folder if c not in chr(92) + '/:*?\"<>|')[:60].strip()}"
+        dst.mkdir(parents=True, exist_ok=True)
+        for f in files:
+            shutil.copyfile(f, dst / f.name)
+        where = str(dst)
+    else:
+        import gdrive
+        where = gdrive.save("이선생", day, folder, files)
+    h = history() + [{"date": day, "brand": topic["brand"], "form": topic.get("form", ""), "title": title,
+                         "sunny": post.get("sunny", "써니" in post["body"])}]
+    HISTORY.write_text(json.dumps(h, ensure_ascii=False, indent=1), encoding="utf-8")
+    log(f"  초안 저장: {where} (검사 후 python brand.py --finish 폴더)")
+    return Path(where)
+
+
+def finish(folder: Path) -> Path:
+    """검사 끝난 초안(사용자가 고친 제목·본문·해시태그 그대로)으로 사진·썸네일·최종 원고·클립을 같은 폴더에 만든다."""
+    from anthropic import Anthropic
+    from writer import MODEL
+    import draft
+    d = draft.read(folder)
+    post = dict(d["info"])
+    post["titles"] = [d["title"]] + (d["alts"] or post.get("titles", [])[1:])
+    post["body"], post["hashtags"] = d["body"], d["hashtags"]
+    log(f"=== 브랜드시선 이미지: {d['title']} ===")
+    return build_assets(Anthropic(), MODEL, post, post.get("_topic", {}), dest=folder, record=False)
+
+
+def build_assets(client, MODEL, post: dict, topic: dict, local: Path = None, dest: Path = None,
+                 record: bool = True) -> Path:
+    """공식 사진 수집·배치, 썸네일, 최종 원고(html/txt), 클립. dest 가 있으면 그 폴더에 바로 넣는다."""
+    title = post["titles"][0]
     import tempfile
     work = Path(tempfile.mkdtemp())
     cands = collect_photos(post.get("official_pages", []), work / "cand")
@@ -568,9 +625,9 @@ def run(topic_text: str = None, local: Path = None, redo_photos: bool = False, a
 
     day = datetime.now().strftime("%Y-%m-%d")
     folder = f"[브랜드시선] {re.sub(r'^\[[^\]]+\]\s*', '', title)}"
-    if local:
+    if dest or local:
         import shutil
-        dst = local / f"{day} {''.join(c for c in folder if c not in chr(92) + '/:*?\"<>|')[:60].strip()}"
+        dst = dest or local / f"{day} {''.join(c for c in folder if c not in chr(92) + '/:*?\"<>|')[:60].strip()}"
         shutil.copytree(out, dst, dirs_exist_ok=True)
         where = str(dst)
     else:
@@ -580,7 +637,7 @@ def run(topic_text: str = None, local: Path = None, redo_photos: bool = False, a
             p.rename(out / f"원본_{p.name}")
         where = gdrive.save("이선생", day, folder, texts + files + clips
                             + [out / f"원본_{n}" for n in names.values() if n.endswith(".jpg")])
-    if not redo_photos:
+    if record:
         h = history() + [{"date": day, "brand": topic["brand"], "form": topic.get("form", ""), "title": title,
                              "sunny": post.get("sunny", "써니" in body)}]
         HISTORY.write_text(json.dumps(h, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -592,6 +649,9 @@ if __name__ == "__main__":
     from dotenv import load_dotenv
     load_dotenv(ROOT / ".env")
     args = sys.argv[1:]
+    if args and args[0] == "--finish":  # 검사 끝난 초안 폴더로 이미지 단계 (2026-11-27)
+        finish(Path(" ".join(args[1:])))
+        sys.exit(0)
     local = None
     if "--local" in args:
         i = args.index("--local")
